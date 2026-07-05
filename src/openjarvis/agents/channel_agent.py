@@ -108,7 +108,14 @@ class ChannelAgent:
         try:
             result = self._agent.run(msg.content)
             response_text: str = getattr(result, "content", str(result))
-        except Exception as exc:  # noqa: BLE001
+            try:
+                from openjarvis.cli.ask import _append_kingwen_block
+
+                _append_kingwen_block(self._agent, result, user_input=msg.content)
+                response_text = getattr(result, "content", str(result))
+            except Exception:
+                pass
+        except Exception as exc:
             friendly = (
                 f"Sorry, I ran into an error while processing your request: {exc}"
             )
@@ -138,6 +145,13 @@ class ChannelAgent:
         kingwen_block = getattr(self._agent, "_build_kingwen_response_block", lambda: "")()
         if kingwen_block:
             reply = f"{reply}\n\n{kingwen_block}"
+
+        try:
+            directive = getattr(self._agent, "_build_kingwen_directive", lambda: "")()
+        except Exception:
+            directive = ""
+        if directive:
+            reply = f"{directive}\n\n{reply}" if reply.strip() else directive
 
         # Same field-mapping as the error path above (#459).
         self._channel.send(

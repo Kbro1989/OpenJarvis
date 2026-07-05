@@ -107,6 +107,12 @@ def run_slack_daemon(
 
         try:
             result = agent.run(text)
+            try:
+                from openjarvis.cli.ask import _append_kingwen_block
+
+                _append_kingwen_block(agent, result, user_input=text)
+            except Exception:
+                pass
             reply = _to_slack_fmt(result.content or "No results found.")
         except Exception as exc:
             reply = f"Error: {exc}"

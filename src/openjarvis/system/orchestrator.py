@@ -167,6 +167,31 @@ class QueryOrchestrator:
             agent_kwargs["session_store"] = s.session_store
             agent_kwargs["memory_backend"] = s.memory_backend
 
+        # Inject King Wen advisory-consciousness voice for all agents,
+        # falling back to generic defaults when the workspace is unavailable.
+        default_emotion_provider = None
+        if getattr(s, "config", None) is not None:
+            try:
+                from openjarvis.emotion.kingwen import KingWenEmotionProvider
+                from openjarvis.core.paths import get_kingwen_workspace_dir
+
+                default_emotion_provider = KingWenEmotionProvider(
+                    registry_path=str(get_kingwen_workspace_dir() / "data" / "hexagram-registry.json"),
+                    weights_path=str(get_kingwen_workspace_dir() / "data" / "emotional-weights.json"),
+                    reflections_path=str(get_kingwen_workspace_dir() / "data" / "temporal-reflections.json"),
+                    ternary_module_path=(
+                        get_kingwen_workspace_dir() / "kingwen_ternary_tables_complete.py"
+                    ),
+                )
+                if not getattr(default_emotion_provider, "_kingwen_session_id", None):
+                    session_id = getattr(s, "operator_id", None) or getattr(s, "session_id", None) or getattr(s, "agent_name", None) or "openjarvis"
+                    try:
+                        default_emotion_provider._kingwen_session_id = str(session_id)
+                    except TypeError:
+                        setattr(default_emotion_provider, "_kingwen_session_id", str(session_id))
+            except Exception:
+                default_emotion_provider = None
+
         if agent_name == "morning_digest" and hasattr(s.config, "digest"):
             dc = s.config.digest
             section_sources = {}
@@ -174,6 +199,16 @@ class QueryOrchestrator:
                 sc = getattr(dc, sec, None)
                 if sc and hasattr(sc, "sources"):
                     section_sources[sec] = sc.sources
+            emotion_provider = None
+            if getattr(dc, "emotion_enabled", False):
+                try:
+                    from openjarvis.agents.morning_digest import _load_kingwen_emotion_provider
+
+                    emotion_provider = _load_kingwen_emotion_provider(s.config)
+                except Exception:
+                    emotion_provider = None
+            if emotion_provider is None:
+                emotion_provider = default_emotion_provider
             agent_kwargs.update(
                 {
                     "persona": dc.persona,
@@ -184,6 +219,7 @@ class QueryOrchestrator:
                     "voice_speed": dc.voice_speed,
                     "tts_backend": dc.tts_backend,
                     "honorific": dc.honorific,
+                    "emotion_provider": emotion_provider,
                 }
             )
             from openjarvis.tools.digest_collect import DigestCollectTool
@@ -192,6 +228,9 @@ class QueryOrchestrator:
             digest_tools = [DigestCollectTool(), TextToSpeechTool()]
             existing = agent_kwargs.get("tools", [])
             agent_kwargs["tools"] = digest_tools + list(existing)
+
+        if default_emotion_provider is not None:
+            agent_kwargs.setdefault("emotion_provider", default_emotion_provider)
 
         try:
             ag = agent_cls(s.engine, s.model, **agent_kwargs)
@@ -222,8 +261,20 @@ class QueryOrchestrator:
                 )
                 result = collector.run(query, context=ctx)
                 s.trace_collector = collector
+                try:
+                    from openjarvis.cli.ask import _append_kingwen_block
+
+                    _append_kingwen_block(ag, result, user_input=query)
+                except Exception:
+                    pass
             else:
                 result = ag.run(query, context=ctx)
+                try:
+                    from openjarvis.cli.ask import _append_kingwen_block
+
+                    _append_kingwen_block(ag, result, user_input=query)
+                except Exception:
+                    pass
         finally:
             s.bus.unsubscribe(EventType.INFERENCE_END, _on_inference_end)
 

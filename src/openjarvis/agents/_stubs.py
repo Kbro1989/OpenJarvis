@@ -81,6 +81,9 @@ class BaseAgent(ABC):
             self._emotion_provider = emotion_provider
         if not hasattr(self, "_kingwen_session_id"):
             self._kingwen_session_id = kingwen_session_id
+        if not hasattr(self, "_kingwen_history"):
+            self._kingwen_history: list[dict[str, Any]] = []
+        self._current_emotional_tongue: dict[str, Any] = {}
 
         # Three-tier resolution: explicit arg > config > class default > hardcoded
         if temperature is not None and max_tokens is not None:
@@ -122,6 +125,67 @@ class BaseAgent(ABC):
                 EventType.AGENT_TURN_START,
                 {"agent": self.agent_id, "input": input},
             )
+        self._emotion_text = input
+        self._emotion_input = 50
+        provider = getattr(self, "_emotion_provider", None)
+        if provider is not None and input:
+            try:
+                payload = provider.consult(
+                    text=input,
+                    session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
+                    emotional_input=getattr(self, "_emotion_input", 50),
+                )
+                preset = provider.voice_preset(
+                    tts_backend=getattr(self, "_tts_backend", None) or "cartesia",
+                    voice_weight=float(
+                        payload.get("emotional_deltas", {}).get("voiceWeight", 0.0)
+                    ),
+                )
+                self._kingwen_voice_preset = preset
+                self._kingwen_voice_section = provider.format_voice_section(preset)
+                tongue = payload.get("emotional_tongue") or {}
+                self._current_emotional_tongue = tongue
+                history = getattr(self, "_kingwen_history", None)
+                if history is not None:
+                    history.append(
+                        {
+                            "text": input,
+                            "hexagram_id": payload.get("hexagram_id"),
+                            "hexagram_name": payload.get("hexagram_name", ""),
+                            "phase_temporal": payload.get("phase_temporal", ""),
+                            "voice_weight": float(
+                                payload.get("emotional_deltas", {}).get("voiceWeight", 0.0)
+                            ),
+                            "coherence": float(
+                                payload.get("emotional_deltas", {}).get("coherence", 0.0)
+                            ),
+                            "chaos": float(
+                                payload.get("emotional_deltas", {}).get("chaos", 0.0)
+                            ),
+                            "whimsy": float(
+                                payload.get("emotional_deltas", {}).get("whimsy", 0.0)
+                            ),
+                            "dark_tone": float(
+                                payload.get("emotional_deltas", {}).get("darkTone", 0.0)
+                            ),
+                            "action": payload.get("action", ""),
+                            "category": payload.get("category", ""),
+                            "reaction_frame": payload.get("reaction_frame", "") or "",
+                            "emotional_tongue": tongue,
+                            "porosity": float(tongue.get("porosity", 0.35)),
+                            "direction": str(tongue.get("direction", "") or ""),
+                            "states": tongue.get("states") or {},
+                            "training_weight_vectors": tongue.get("training_weight_vectors") or {},
+                        }
+                    )
+                    if len(history) > 24:
+                        del history[:-24]
+            except Exception:
+                self._kingwen_voice_preset = None
+                self._kingwen_voice_section = ""
+        else:
+            self._kingwen_voice_preset = None
+            self._kingwen_voice_section = ""
 
     def _emit_turn_end(self, **data: Any) -> None:
         """Publish ``AGENT_TURN_END`` if an event bus is available."""
@@ -182,6 +246,9 @@ class BaseAgent(ABC):
                 effective_system_prompt = None
         if effective_system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=effective_system_prompt))
+        tongue_prompt = self._build_emotional_tongue_prompt()
+        if tongue_prompt:
+            messages.append(Message(role=Role.SYSTEM, content=tongue_prompt))
         if context and context.conversation.messages:
             messages.extend(context.conversation.messages)
         messages.append(Message(role=Role.USER, content=input))
@@ -256,10 +323,7 @@ class BaseAgent(ABC):
             payload = provider.consult(
                 text=getattr(self, "_emotion_text", "") or "",
                 session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
-            )
-            voice = provider.voice_preset(
-                tts_backend=getattr(self, "_tts_backend", None) or "cartesia",
-                voice_weight=payload.get("emotional_deltas", {}).get("voiceWeight", 0.0),
+                emotional_input=getattr(self, "_emotion_input", 50),
             )
             return type(
                 "KingWenEmotionPayload",
@@ -267,16 +331,24 @@ class BaseAgent(ABC):
                 {
                     "hexagram_id": payload.get("hexagram_id"),
                     "hexagram_name": payload.get("hexagram_name", ""),
+                    "hexagram_sequence": payload.get("hexagram_sequence", []),
                     "binary": payload.get("binary", ""),
                     "category": payload.get("category", ""),
                     "action": payload.get("action", ""),
+                    "phase_bits": payload.get("phase_bits"),
+                    "phase_temporal": payload.get("phase_temporal", ""),
+                    "reaction_frame": payload.get("reaction_frame", ""),
                     "voice_weight": payload.get("emotional_deltas", {}).get("voiceWeight"),
-                    "voice_backend": voice.get("backend", "cartesia"),
-                    "voice_id": voice.get("voice_id", ""),
-                    "voice_speed": float(voice.get("speed", 1.0) or 1.0),
+                    "kingwen_voice_preset": getattr(self, "_kingwen_voice_preset", None),
+                    "kingwen_voice_section": getattr(self, "_kingwen_voice_section", "") or None,
                     "emotional_deltas": payload.get("emotional_deltas", {}),
                     "reflections": payload.get("reflections", {}),
                     "training_notes": payload.get("trainingNotes", ""),
+                    "emotional_tongue": payload.get("emotional_tongue") or {},
+                    "porosity": float((payload.get("emotional_tongue") or {}).get("porosity", 0.35)),
+                    "direction": str((payload.get("emotional_tongue") or {}).get("direction", "")),
+                    "states": (payload.get("emotional_tongue") or {}).get("states") or {},
+                    "training_weight_vectors": (payload.get("emotional_tongue") or {}).get("training_weight_vectors") or {},
                 },
             )()
         except Exception:
@@ -287,14 +359,133 @@ class BaseAgent(ABC):
         if provider is None:
             return ""
         try:
-            return provider.format_oracle_console(
-                payload=provider.consult(
-                    text=getattr(self, "_emotion_text", "") or "",
-                    session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
-                )
-            )
+            history = getattr(self, "_kingwen_history", None)
+            if history:
+                latest = history[-1]
+                tongue = latest.get("emotional_tongue") or {}
+                states = latest.get("states") or tongue.get("states") or {}
+                payload = {
+                    "hexagram_id": latest.get("hexagram_id"),
+                    "hexagram_name": latest.get("hexagram_name", ""),
+                    "phase_temporal": latest.get("phase_temporal", ""),
+                    "emotional_deltas": {
+                        "voiceWeight": latest.get("voice_weight", 0.0),
+                        "coherence": latest.get("coherence", 0.0),
+                        "chaos": latest.get("chaos", 0.0),
+                        "whimsy": latest.get("whimsy", 0.0),
+                        "darkTone": latest.get("dark_tone", 0.0),
+                    },
+                    "reaction_frame": latest.get("reaction_frame", "") or "",
+                    "trainingNotes": "",
+                    "emotional_tongue": tongue,
+                    "porosity": float(latest.get("porosity", 0.35)),
+                    "direction": str(latest.get("direction", "") or ""),
+                    "states": states,
+                    "training_weight_vectors": latest.get("training_weight_vectors") or {},
+                }
+                return provider.format_oracle_console_with_tongue(payload)
+            tongue = getattr(self, "_current_emotional_tongue", {}) or {}
+            fallback_payload = {
+                "hexagram_id": None,
+                "hexagram_name": "",
+                "phase_temporal": "",
+                "emotional_deltas": {
+                    "voiceWeight": float(tongue.get("voice_weight", 0.0) or 0.0),
+                    "coherence": float(tongue.get("coherence", 0.0) or 0.0),
+                    "chaos": float(tongue.get("chaos", 0.0) or 0.0),
+                    "whimsy": float(tongue.get("whimsy", 0.0) or 0.0),
+                    "darkTone": float(tongue.get("dark_tone", 0.0) or 0.0),
+                },
+                "reaction_frame": str(tongue.get("reaction_frame", "") or ""),
+                "trainingNotes": "",
+                "emotional_tongue": tongue,
+                "porosity": float(tongue.get("porosity", 0.35)),
+                "direction": str(tongue.get("direction", "") or ""),
+                "states": tongue.get("states") or {},
+                "training_weight_vectors": tongue.get("training_weight_vectors") or {},
+            }
+            return provider.format_oracle_console_with_tongue(fallback_payload)
         except Exception:
             return ""
+
+    def _build_emotional_tongue_prompt(self) -> str:
+        """Build a compact deterministic tongue prompt block for every turn."""
+        tongue = getattr(self, "_current_emotional_tongue", {}) or {}
+        if not tongue:
+            return ""
+        states = tongue.get("states") or {}
+        past_state = states.get("past", "") if isinstance(states, dict) else ""
+        present_state = states.get("present", "") if isinstance(states, dict) else ""
+        future_state = states.get("future", "") if isinstance(states, dict) else ""
+        direction = str(tongue.get("direction", "") or "")
+        porosity = float(tongue.get("porosity", 0.0) or 0.0)
+        vectors = tongue.get("training_weight_vectors") or {}
+        voice = float(vectors.get("voiceWeight", tongue.get("voice_weight", 0.0) or 0.0))
+        coherence = float(vectors.get("coherence", tongue.get("coherence", 0.0) or 0.0))
+        chaos = float(vectors.get("chaos", tongue.get("chaos", 0.0) or 0.0))
+        whimsy = float(vectors.get("whimsy", tongue.get("whimsy", 0.0) or 0.0))
+        dark = float(vectors.get("darkTone", tongue.get("dark_tone", 0.0) or 0.0))
+        lines = [
+            "## Emotional Tongue",
+            "",
+            f"- Past: {past_state}",
+            f"- Present: {present_state}",
+            f"- Future: {future_state}",
+            f"- Direction: {direction}",
+            f"- Porosity: {porosity:.2f}",
+            "- Vectors:",
+            f"  - voiceWeight: {voice:.2f}",
+            f"  - coherence: {coherence:.2f}",
+            f"  - chaos: {chaos:.2f}",
+            f"  - whimsy: {whimsy:.2f}",
+            f"  - darkTone: {dark:.2f}",
+            "",
+            "Use this tongue as the dominant tonal and routing constraint for this thought.",
+        ]
+        return "\n".join(lines)
+
+    def _build_kingwen_intent_guidance(self, user_input: str) -> str:
+        """Build intent-grounded guidance from the current save-string tongue and user message."""
+        tongue = getattr(self, "_current_emotional_tongue", {}) or {}
+        if not tongue or not user_input:
+            return ""
+        states = tongue.get("states") or {}
+        present_state = states.get("present", "") if isinstance(states, dict) else ""
+        direction = str(tongue.get("direction", "") or "")
+        porosity = float(tongue.get("porosity", 0.0) or 0.0)
+        vectors = tongue.get("training_weight_vectors") or {}
+        voice = float(vectors.get("voiceWeight", tongue.get("voice_weight", 0.0) or 0.0))
+        coherence = float(vectors.get("coherence", tongue.get("coherence", 0.0) or 0.0))
+        lines = [
+            "## Intent Guidance",
+            "",
+            f"- User intent: {user_input}",
+            f"- Present state: {present_state}",
+            f"- Direction: {direction}",
+            f"- Porosity: {porosity:.2f}",
+            f"- voiceWeight: {voice:.2f}, coherence: {coherence:.2f}",
+            "",
+            "Derive actionables from this consult, ordered by King Wen emotional routing.",
+        ]
+        return "\n".join(lines)
+
+    def _build_kingwen_tail_with_intent(self, user_input: str) -> str:
+        """Unified tail renderer: intent guidance + directive + Oracle Console response block.
+
+        This is the single entry point for every live return path that wants the
+        King Wen save-string tail without duplicating block assembly.
+        """
+        parts: list[str] = []
+        intent_block = self._build_kingwen_intent_guidance(user_input)
+        if intent_block:
+            parts.append(intent_block)
+        directive = self._build_kingwen_directive()
+        if directive:
+            parts.append(directive)
+        response_block = self._build_kingwen_response_block()
+        if response_block:
+            parts.append(response_block)
+        return "\n\n".join(parts) if parts else ""
 
     def _max_turns_result(
         self,

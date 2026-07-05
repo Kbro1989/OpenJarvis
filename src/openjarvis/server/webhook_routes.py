@@ -220,6 +220,7 @@ def create_webhook_router(
                         )
                         result = agent.run(body)
                         response = result.content or ""
+                        _append_kingwen_block(agent, result, user_input=body)
                 except Exception as _exc:
                     response = f"Error: {_exc}"
 

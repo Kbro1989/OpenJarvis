@@ -464,6 +464,12 @@ def _handle_agent(
             result = collector.run(input_text, context=ctx)
         else:
             result = agent.run(input_text, context=ctx)
+        try:
+            from openjarvis.cli.ask import _append_kingwen_block
+
+            _append_kingwen_block(agent, result, user_input=input_text)
+        except Exception:
+            pass
     finally:
         agent._model = original_model
 

@@ -86,10 +86,16 @@ class OperativeAgent(ToolUsingAgent):
         """Execute a single operator tick."""
         self._emit_turn_start(input)
 
+        kingwen_directive = self._build_kingwen_directive()
+        if kingwen_directive:
+            kwargs.setdefault("kingwen_directive", kingwen_directive)
+
         # 1. Build system prompt with state context
         sys_parts: list[str] = []
         if self._system_prompt:
             sys_parts.append(self._system_prompt)
+        if kingwen_directive:
+            sys_parts.append(kingwen_directive)
 
         # 2. State recall from memory backend
         previous_state = self._recall_state()
@@ -97,6 +103,9 @@ class OperativeAgent(ToolUsingAgent):
             sys_parts.append(f"\n## Previous State\n{previous_state}")
 
         system_prompt = "\n\n".join(sys_parts) if sys_parts else None
+        tongue_prompt = self._build_emotional_tongue_prompt()
+        if tongue_prompt:
+            system_prompt = f"{system_prompt}\n\n{tongue_prompt}" if system_prompt else tongue_prompt
         # Honor SOUL.md / MEMORY.md / USER.md persona files like `jarvis ask`,
         # appended so the operative's own instructions are preserved (#376).
         system_prompt = self._apply_persona(system_prompt)
@@ -154,6 +163,11 @@ class OperativeAgent(ToolUsingAgent):
                 for i, tc in enumerate(raw_tool_calls)
             ]
 
+            try:
+                tool_calls = self._mediate_tool_selection(tool_calls)
+            except Exception:
+                pass
+
             messages.append(
                 Message(
                     role=Role.ASSISTANT,
@@ -185,6 +199,13 @@ class OperativeAgent(ToolUsingAgent):
 
                 tool_result = self._executor.execute(tc)
                 all_tool_results.append(tool_result)
+
+                try:
+                    self._monitor_kingwen_tool_call(
+                        [tc], [tool_result]
+                    )
+                except Exception:
+                    pass
 
                 # Track if agent stored state via memory_store
                 if tc.name == "memory_store" and self._operator_id:
@@ -223,7 +244,15 @@ class OperativeAgent(ToolUsingAgent):
         if not state_stored_by_tool:
             self._auto_persist_state(content)
 
+        try:
+            self._update_kingwen_state_from_tools(all_tool_results)
+        except Exception:
+            pass
+
         self._emit_turn_end(turns=turns, content_length=len(content))
+        kingwen_block = self._build_kingwen_response_block()
+        if kingwen_block:
+            content = f"{content}\n\n{kingwen_block}" if content.strip() else kingwen_block
         return AgentResult(
             content=content,
             tool_results=all_tool_results,
@@ -310,7 +339,6 @@ class OperativeAgent(ToolUsingAgent):
             return
         state_key = f"operator:{self._operator_id}:state"
         try:
-            # Store a summary of the agent's response as state
             summary = content[:1000] if content else ""
             self._memory_backend.store(state_key, summary)
         except Exception:
@@ -319,5 +347,152 @@ class OperativeAgent(ToolUsingAgent):
                 self._operator_id,
             )
 
+    # ------------------------------------------------------------------ #
+    # King Wen subconscious influence + guided tool-call layer
+    # ------------------------------------------------------------------ #
+    def _build_kingwen_directive(self) -> str:
+        """Build a deterministic directive block from King Wen history."""
+        history = getattr(self, "_kingwen_history", None)
+        if not history:
+            return ""
 
-__all__ = ["OperativeAgent"]
+        latest = history[-1]
+        action = latest.get("action", "advise")
+        category = latest.get("category", "")
+        coherence = latest.get("coherence", 0.0)
+        whimsy = latest.get("whimsy", 0.0)
+        phase = latest.get("phase_temporal", "")
+        reaction = latest.get("reaction_frame", "") or ""
+
+        lines = [
+            "\n## Subconscious King Wen Direction",
+            f"- Current hexagram: {latest.get('hexagram_name', '')} ({latest.get('hexagram_id')})",
+            f"- Phase / temporal: {phase}",
+            f"- Action frame: {action} | Category: {category}",
+            f"- Weights: voice={latest.get('voice_weight', 0.0):.2f}, coherence={coherence:.2f}, "
+            f"chaos={latest.get('chaos', 0.0):.2f}, whimsy={whimsy:.2f}, dark={latest.get('dark_tone', 0.0):.2f}",
+        ]
+        if reaction:
+            lines.append(f"- Reaction frame: {reaction}")
+
+        lines.append(
+            "After your first turn, allow this frame to bias tool selection; "
+            "if coherence is high, prefer one focused native tool call."
+        )
+        return "\n".join(lines)
+
+    def _update_kingwen_state_from_tools(
+        self,
+        tool_results: list[ToolResult],
+    ) -> None:
+        """Lightly mutate the latest King Wen turn weights from tool outcomes.
+
+        This is the bedside monitor for the guided tool-call layer:
+        - raise coherence and lower chaos on successful native tool calls
+        - lower voiceWeight and raise darkTone on failed calls
+        - append a tool outcome marker to the reaction frame
+        """
+        history = getattr(self, "_kingwen_history", None)
+        if not history or not tool_results:
+            return
+
+        latest = history[-1]
+        successes = sum(1 for tr in tool_results if tr.success)
+        failures = max(0, len(tool_results) - successes)
+        for tr in tool_results:
+            outcomes = latest.get("tool_outcomes", [])
+            outcomes.append(
+                {
+                    "name": tr.tool_name,
+                    "success": tr.success,
+                    "content": (tr.content or "")[:240],
+                }
+            )
+            latest["tool_outcomes"] = outcomes
+
+        if failures == 0 and tool_results:
+            latest["coherence"] = min(1.0, float(latest.get("coherence", 0.0)) + 0.05)
+            latest["chaos"] = max(0.0, float(latest.get("chaos", 0.0)) - 0.03)
+            latest["voice_weight"] = max(
+                0.0, min(1.0, float(latest.get("voice_weight", 0.0)) + 0.02)
+            )
+        elif failures:
+            latest["coherence"] = max(0.0, float(latest.get("coherence", 0.0)) - 0.04)
+            latest["chaos"] = min(1.0, float(latest.get("chaos", 0.0)) + 0.05)
+            latest["voice_weight"] = max(
+                0.0, min(1.0, float(latest.get("voice_weight", 0.0)) - 0.03)
+            )
+            latest["dark_tone"] = min(1.0, float(latest.get("dark_tone", 0.0)) + 0.04)
+
+    def _monitor_kingwen_tool_call(
+        self,
+        tool_calls: list[ToolCall],
+        tool_results: list[ToolResult],
+    ) -> dict[str, Any]:
+        """Record tool-call outcomes under the current King Wen turn."""
+        history = getattr(self, "_kingwen_history", None)
+        if not history or not tool_calls:
+            return {}
+
+        latest = history[-1]
+        monitored_tools = [
+            latest.get("action", ""),
+            latest.get("category", ""),
+        ]
+        called_names = [tc.name for tc in tool_calls]
+        matches = [name for name in called_names if name in monitored_tools]
+
+        record: dict[str, Any] = {
+            "turn_hexagram_id": latest.get("hexagram_id"),
+            "turn_hexagram_name": latest.get("hexagram_name", ""),
+            "turn_action": latest.get("action", ""),
+            "turn_category": latest.get("category", ""),
+            "tool_calls": called_names,
+            "matches": matches,
+            "results": [
+                {"name": tr.tool_name, "success": tr.success}
+                for tr in tool_results
+            ],
+        }
+        if history is not None and len(history) > 24:
+            del history[:-24]
+        return record
+
+    def _mediate_tool_selection(
+        self,
+        tool_calls: list[ToolCall],
+    ) -> list[ToolCall]:
+        """Deterministically reorder tool calls based on King Wen weights.
+
+        High coherence / action-aligned calls are promoted to the front.
+        """
+        history = getattr(self, "_kingwen_history", None)
+        if not history or len(tool_calls) <= 1:
+            return tool_calls
+
+        latest = history[-1]
+        action = latest.get("action", "")
+        action_weight = float(latest.get("voice_weight", 0.0))
+        coherence = float(latest.get("coherence", 0.0))
+        if not action or coherence <= 0.55 or action_weight <= 0.5:
+            return tool_calls
+
+        def _priority(name: str) -> int:
+            base = 0
+            if name == action:
+                base += 10
+            category = latest.get("category", "")
+            if category and category in name:
+                base += 5
+            return base
+
+        try:
+            ranked = sorted(
+                tool_calls,
+                key=lambda tc: _priority(tc.name),
+                reverse=True,
+            )
+            return ranked
+        except Exception:
+            return tool_calls
+

@@ -461,6 +461,12 @@ async def _stream_research(
         sampler.start()
         try:
             result = agent.run(query)
+            try:
+                from openjarvis.cli.ask import _append_kingwen_block
+
+                _append_kingwen_block(agent, result, user_input=query)
+            except Exception:
+                pass
             usage_dict = dict(result.usage)
             totals = sampler.stop()
             # Persist token usage *and* GPU energy/power so /v1/telemetry/energy

@@ -464,7 +464,50 @@ def _run_agent(
         except Exception as exc:
             logger.warning("Failed to inject memory context for agent: %s", exc)
 
-    return agent.run(query_text, context=ctx) + "\n\n" + getattr(agent, "_build_kingwen_response_block", lambda: "")()
+    result_obj = agent.run(query_text, context=ctx)
+    _append_kingwen_block(agent, result_obj)
+    return result_obj
+
+def _append_kingwen_block(agent, result_obj, *, user_input: str = "") -> None:
+    """Append a unified King Wen tail block to ``result_obj.content``.
+
+    Ordering inside the tail is handled by the agent:
+    - ``_build_kingwen_tail_with_intent(user_input)``
+    - otherwise ``_build_kingwen_directive()`` + ``_build_kingwen_response_block()``
+    """
+
+    def _first_non_empty(text: str) -> str:
+        if not text:
+            return ""
+        for line in text.splitlines():
+            candidate = line.strip()
+            if candidate:
+                return candidate
+        return ""
+
+    unified = ""
+    try:
+        if hasattr(agent, "_build_kingwen_tail_with_intent") and hasattr(agent, "_build_kingwen_directive"):
+            unified = agent._build_kingwen_tail_with_intent(user_input)
+        else:
+            directive = getattr(agent, "_build_kingwen_directive", lambda: "")()
+            block = getattr(agent, "_build_kingwen_response_block", lambda: "")()
+            unified = f"{directive}\n\n{block}" if directive else block
+    except Exception:
+        unified = ""
+    if not unified:
+        return
+
+    content = getattr(result_obj, "content", "") or ""
+    preview = _first_non_empty(content)
+    if preview and preview not in content.splitlines()[0]:
+        content = f"{content.rstrip()}\n\n{unified}"
+    else:
+        content = f"{content.rstrip()}\n\n{unified}" if content else unified
+    try:
+        object.__setattr__(result_obj, "content", content)
+    except Exception:
+        pass
 
 
 def _print_profile(

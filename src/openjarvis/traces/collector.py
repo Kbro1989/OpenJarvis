@@ -62,6 +62,16 @@ class TraceCollector:
         started_at = time.time()
         try:
             result = self._agent.run(input, context=context, **kwargs)
+            try:
+                from openjarvis.cli.ask import _append_kingwen_block
+
+                _append_kingwen_block(
+                    self._agent,
+                    result,
+                    user_input=input,
+                )
+            except Exception:
+                pass
         finally:
             self._unsubscribe(unsubs)
 

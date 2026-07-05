@@ -550,8 +550,35 @@ class AgentExecutor:
             agent["name"],
             len(input_text),
         )
+
+        # King Wen subconscious head injection for managed-agent ticks.
+        # If the resolved agent exposes King Wen state, prepend a deterministic
+        # directive block to the model input so the subconscious frame biases
+        # tool selection from the start of the tick.
+        _kingwen_directive = ""
+        _kingwen_tongue_prompt = ""
+        try:
+            _kingwen_directive = getattr(agent_instance, "_build_kingwen_directive", lambda: "")()
+            _kingwen_tongue_prompt = getattr(agent_instance, "_build_emotional_tongue_prompt", lambda: "")()
+        except Exception:
+            _kingwen_directive = ""
+            _kingwen_tongue_prompt = ""
+        if _kingwen_directive:
+            input_text = f"{input_text}{_kingwen_directive}"
+        if _kingwen_tongue_prompt:
+            input_text = f"{input_text}{_kingwen_tongue_prompt}"
+
         _t0 = time.time()
         result = agent_instance.run(input_text, context=agent_ctx)
+
+        # Post-tick King Wen monitoring: if the agent records tool outcomes in
+        # its history, append them here as bedside monitoring for this tick.
+        try:
+            getattr(agent_instance, "_update_kingwen_state_from_tools", lambda *_: None)(
+                getattr(result, "tool_results", []) or []
+            )
+        except Exception:
+            pass
 
         # Retry once if the model returned empty content (common with
         # Qwen3.5 thinking mode consuming all tokens).

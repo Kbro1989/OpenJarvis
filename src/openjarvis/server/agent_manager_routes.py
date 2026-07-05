@@ -994,6 +994,7 @@ async def _stream_managed_agent(
                         result = dr_agent.run(user_content)
                         content = result.content or "No results found."
                         agent_metadata = result.metadata or {}
+                        _append_kingwen_block(dr_agent, result, user_input=user_content)
                     except Exception as exc:
                         content = f"Error: {exc}"
 

@@ -14,6 +14,7 @@ from openjarvis.core.config import load_config
 from openjarvis.core.events import EventBus
 from openjarvis.core.types import Message, Role
 from openjarvis.memory import publish_completed_exchange
+from openjarvis.cli.ask import _append_kingwen_block
 
 
 def _read_input(prompt: str = "You> ") -> Optional[str]:
@@ -266,6 +267,7 @@ def chat(
         try:
             if agent is not None:
                 response = agent.run(user_input)
+                _append_kingwen_block(agent, response, user_input=user_input)
                 content = (
                     response.content if hasattr(response, "content") else str(response)
                 )
@@ -276,11 +278,6 @@ def chat(
                     if isinstance(result, dict)
                     else str(result)
                 )
-
-            if agent is not None:
-                kingwen_block = agent._build_kingwen_response_block()
-                if kingwen_block:
-                    content = f"{content or ''}\n\n{kingwen_block}"
 
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()
