@@ -488,6 +488,22 @@ class Jarvis:
         if self._capability_policy is not None:
             agent_kwargs["capability_policy"] = self._capability_policy
 
+        # Inject King Wen advisory-consciousness voice for all agents,
+        # falling back to generic defaults when the workspace is unavailable.
+        default_emotion_provider = None
+        if getattr(self._config, "agent", None) is not None:
+            try:
+                from openjarvis.emotion.kingwen import KingWenEmotionProvider
+                from openjarvis.core.paths import get_kingwen_workspace_dir
+
+                default_emotion_provider = KingWenEmotionProvider(
+                    registry_path=str(get_kingwen_workspace_dir() / "data" / "hexagram-registry.json"),
+                    weights_path=str(get_kingwen_workspace_dir() / "data" / "emotional-weights.json"),
+                    reflections_path=str(get_kingwen_workspace_dir() / "data" / "temporal-reflections.json"),
+                )
+            except Exception:
+                default_emotion_provider = None
+
         # Inject DigestConfig for morning_digest agent
         if agent_name == "morning_digest" and hasattr(self._config, "digest"):
             dc = self._config.digest
@@ -496,6 +512,16 @@ class Jarvis:
                 sc = getattr(dc, s, None)
                 if sc and hasattr(sc, "sources"):
                     section_sources[s] = sc.sources
+            emotion_provider = None
+            if getattr(dc, "emotion_enabled", False):
+                try:
+                    from openjarvis.agents.morning_digest import _load_kingwen_emotion_provider
+
+                    emotion_provider = _load_kingwen_emotion_provider(self._config)
+                except Exception:
+                    emotion_provider = None
+            if emotion_provider is None:
+                emotion_provider = default_emotion_provider
             agent_kwargs.update(
                 {
                     "persona": dc.persona,
@@ -506,6 +532,7 @@ class Jarvis:
                     "voice_speed": dc.voice_speed,
                     "tts_backend": dc.tts_backend,
                     "honorific": dc.honorific,
+                    "emotion_provider": emotion_provider,
                 }
             )
             # Ensure digest agent always has its required tools
@@ -515,6 +542,9 @@ class Jarvis:
             digest_tools = [DigestCollectTool(), TextToSpeechTool()]
             existing = agent_kwargs.get("tools", [])
             agent_kwargs["tools"] = digest_tools + list(existing)
+
+        if default_emotion_provider is not None:
+            agent_kwargs.setdefault("emotion_provider", default_emotion_provider)
 
         agent_obj = agent_cls(self._engine, model_name, **agent_kwargs)
         ctx = AgentContext()
@@ -546,9 +576,23 @@ class Jarvis:
             except Exception as exc:
                 logger.warning("Failed to inject memory context for agent: %s", exc)
 
-        result = agent_obj.run(query, context=ctx)
+        result_obj = agent_obj.run(query, context=ctx)
+        unified_tail = ""
+        try:
+            from openjarvis.cli.ask import _append_kingwen_block
+            _append_kingwen_block(agent_obj, result_obj, user_input=query)
+            unified_tail = bool(
+                getattr(result_obj, "content", "") or ""
+            )
+        except Exception:
+            unified_tail = False
+
+        advisory = getattr(agent_obj, "_build_kingwen_response_block", lambda: "")()
+        content = (getattr(result_obj, "content", "") or "") + (
+            "\n\n" + advisory if advisory else ""
+        )
         return {
-            "content": result.content,
+            "content": content,
             "usage": {},
             "tool_results": [
                 {
@@ -556,11 +600,16 @@ class Jarvis:
                     "content": tr.content,
                     "success": tr.success,
                 }
-                for tr in result.tool_results
+                for tr in getattr(result_obj, "tool_results", [])
             ],
-            "turns": result.turns,
+            "turns": getattr(result_obj, "turns", 0),
             "model": model_name,
             "engine": self._resolved_engine_key,
+            "kingwen": {
+                "unified_tail_applied": unified_tail,
+                "advisory_present": bool(advisory),
+                "call_sign": getattr(agent_obj, "_kingwen_call_sign", None),
+            },
         }
 
     def _inject_context(

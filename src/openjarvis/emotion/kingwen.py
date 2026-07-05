@@ -375,6 +375,7 @@ class KingWenEmotionProvider:
             },
             "trainingNotes": weights.get("trainingNotes", ""),
             "emotional_tongue": collapse.get("emotional_tongue") or {},
+            "save_string": self.encode_tongue(collapse.get("emotional_tongue") or {}),
         }
         if secondary_name:
             payload["secondary_hexagram"] = {
@@ -383,6 +384,78 @@ class KingWenEmotionProvider:
                 "unicode": secondary_unicode,
             }
         return payload
+
+    def encode_tongue(self, tongue: Dict[str, Any]) -> str:
+        """Encode a captured emotional-tongue save string.
+
+        Compact deterministic carrier for the current 512-state collapse:
+        unicode | porosity | chaos | whimsy | darkTone | coherence | voiceWeight
+        """
+        registry = getattr(self, "_registry", {})
+        tongue = tongue or {}
+        hexagram_id = tongue.get("hexagram_id")
+        if not hexagram_id:
+            hexagram_id = self._stable_hash(str(tongue)) % 64 + 1
+        record = registry.get(str(int(hexagram_id))) or {}
+        unicode_char = str(record.get("unicode", "")) or ""
+        porosity = float(tongue.get("porosity", 0.35))
+        vectors = tongue.get("training_weight_vectors") or {}
+        return "|".join(
+            [
+                unicode_char,
+                f"{porosity:.4f}",
+                f"{float(vectors.get('chaos', tongue.get('chaos', 0.0))):.6f}",
+                f"{float(vectors.get('whimsy', tongue.get('whimsy', 0.0))):.6f}",
+                f"{float(vectors.get('darkTone', tongue.get('dark_tone', 0.0))):.6f}",
+                f"{float(vectors.get('coherence', tongue.get('coherence', 0.0))):.6f}",
+                f"{float(vectors.get('voiceWeight', tongue.get('voice_weight', 0.0))):.6f}",
+            ]
+        )
+
+    def decode_tongue(self, save_string: str) -> Dict[str, Any]:
+        """Decode a save string back into a usable tongue envelope.
+
+        Returns a minimal dict with unicode, porosity, vectors, and
+        direction hint. Rehydration intentionally does not recompute
+        full ternary/phases/temporal states from this carrier.
+        """
+        parts = [p.strip() for p in str(save_string or "").split("|")]
+        while len(parts) < 7:
+            parts.append("")
+        unicode_char, porosity_s, chaos_s, whimsy_s, dark_s, coherence_s, voice_s = parts[:7]
+        try:
+            porosity = float(porosity_s)
+        except Exception:
+            porosity = 0.35
+        vectors = {
+            "chaos": float(chaos_s or 0.0),
+            "whimsy": float(whimsy_s or 0.0),
+            "darkTone": float(dark_s or 0.0),
+            "coherence": float(coherence_s or 0.0),
+            "voiceWeight": float(voice_s or 0.0),
+        }
+        tongue: Dict[str, Any] = {
+            "unicode": unicode_char,
+            "porosity": porosity,
+            "training_weight_vectors": vectors,
+            "voice_weight": vectors["voiceWeight"],
+            "coherence": vectors["coherence"],
+            "chaos": vectors["chaos"],
+            "whimsy": vectors["whimsy"],
+            "dark_tone": vectors["darkTone"],
+        }
+        if unicode_char:
+            registry = getattr(self, "_registry", {})
+            hexagram_id = None
+            for rid, record in registry.items():
+                if record.get("unicode") == unicode_char:
+                    hexagram_id = int(rid)
+                    break
+            if hexagram_id is not None:
+                tongue["hexagram_id"] = hexagram_id
+                tongue["action"] = (registry.get(str(hexagram_id)) or {}).get("action", "")
+                tongue["category"] = (registry.get(str(hexagram_id)) or {}).get("category", "")
+        return tongue
 
     # ------------------------------------------------------------------
     # Voice wiring
@@ -632,6 +705,15 @@ class KingWenEmotionProvider:
             "ternary_lines_top_to_bottom": ternary_entry.get("ternary_lines_top_to_bottom") or [],
             "phase_changing_lines": ternary_entry.get("phase_changing_lines") or [],
             "call_sign": self.get_kingwen_call_sign(text, session_id, hexagram_id, phase_bits),
+            "has_call_sign": True,
+            "has_sequence": bool(collapse.get("hexagram_sequence")),
+            "has_reaction": bool(collapse.get("reaction_frame")),
+            "has_states": bool((collapse.get("emotional_tongue") or {}).get("states")),
+            "has_vectors": bool((collapse.get("emotional_tongue") or {}).get("training_weight_vectors")),
+            "has_tongue": bool(collapse.get("emotional_tongue")),
+            "valid": self._ternary_to_bool(record.get("category") or collapse.get("action")),
+            "success": True,
+            "active": True,
             "voice_weight": float(weights.get("voiceWeight", 0.0)),
             "coherence": float(weights.get("coherence", 0.0)),
             "chaos": float(weights.get("chaos", 0.0)),
@@ -668,6 +750,15 @@ class KingWenEmotionProvider:
                 "darkTone": float(weights.get("darkTone", 0.0)),
             },
             "call_sign": self.get_kingwen_call_sign(text, session_id, hexagram_id, int(collapse.get("best_phase") or 0)),
+            "has_call_sign": True,
+            "has_sequence": bool(collapse.get("hexagram_sequence")),
+            "has_reaction": bool(collapse.get("reaction_frame")),
+            "has_states": bool((collapse.get("emotional_tongue") or {}).get("states")),
+            "has_vectors": bool((collapse.get("emotional_tongue") or {}).get("training_weight_vectors")),
+            "has_tongue": bool(collapse.get("emotional_tongue")),
+            "valid": self._ternary_to_bool(record.get("category") or collapse.get("action")),
+            "success": True,
+            "active": True,
         }
 
     def inject_state(self, text: str, session_id: str, call_sign: str) -> Dict[str, Any]:
@@ -691,9 +782,127 @@ class KingWenEmotionProvider:
             "session_id": session_id,
             "call_sign": call_sign,
             "token": token,
-            "source": "inject_state",
+            "injected_at": time.time(),
         }
         history.append(entry)
         if len(history) > 64:
             del history[:-64]
-        return entry
+        return {"injected": True, "token": token, "history_len": len(history)}
+
+    @staticmethod
+    def _ternary_to_bool(value: Any) -> bool:
+        """Translate a King Wen ternary-ish value into a strict boolean.
+
+        Truth contract:
+        - numeric > 0 is True
+        - non-empty string is True
+        - integer 1 is True
+        - integer 0 / empty / None / False is False
+        """
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return bool(value.strip())
+        return bool(value)
+
+    # ------------------------------------------------------------------
+    # Domain lock: resolve Unicode + porosity/vectors into gating logic
+    # ------------------------------------------------------------------
+
+    def resolve_domain_lock_for_tool(
+        self,
+        unicode_char: str = "",
+        porosity: float = 0.35,
+        vectors: Optional[Dict[str, Any]] = None,
+        *,
+        tool_name: str = "",
+        tool_category: str = "",
+    ) -> Dict[str, Any]:
+        """Resolve whether a tool call should be allowed under the active consult.
+
+        The domain lock uses the King Wen save-string surface as its identity
+        token: the canonical unicode glyph plus porosity plus emotional vectors.
+        Existing gating mechanics in OpenJarvis (``ToolExecutor``, capability
+        policy, boundary guard) remain the enforcement points; this method only
+        produces the decision so those existing layers can act on it without
+        knowing King Wen internals.
+
+        Returns:
+            Dict with ``allowed``, ``reason``, ``unicode``, ``porosity``,
+            ``vectors``, and ``action``/``category`` when available.
+        """
+        registry = getattr(self, "_registry", {})
+        hexagram_id = None
+        if unicode_char:
+            for rid, record in registry.items():
+                if record.get("unicode") == unicode_char:
+                    hexagram_id = int(rid)
+                    break
+        record = registry.get(str(hexagram_id), {}) if hexagram_id is not None else {}
+        weights = registry.get("weights_map", {}) if hasattr(self, "_weights") else {}
+        weights = self._weights.get(str(hexagram_id), {}) if hexagram_id is not None else {}
+        action = str(record.get("action", weights.get("action", "")) or "").lower()
+        category = str(record.get("category", weights.get("category", "")) or "").lower()
+        tool_name_s = str(tool_name or "").lower()
+        tool_category_s = str(tool_category or "").lower()
+        vectors = vectors or {}
+        coherence = float(vectors.get("coherence", 0.0))
+        voice_weight = float(vectors.get("voiceWeight", 0.0))
+        chaos = float(vectors.get("chaos", 0.0))
+        whimsy = float(vectors.get("whimsy", 0.0))
+        dark_tone = float(vectors.get("darkTone", 0.0))
+        action_mismatch = bool(action and tool_name_s and action not in tool_name_s and tool_name_s not in action)
+        category_mismatch = bool(category and tool_category_s and category not in tool_category_s and tool_category_s not in category)
+        porosity_bonus = max(0.0, min(1.0, (porosity - 0.35) * 2.0))
+        stability = max(0.0, min(1.0, (coherence + voice_weight) / 2.0))
+        stability = stability + porosity_bonus * 0.1 - chaos * 0.2 - dark_tone * 0.15 + whimsy * 0.05
+        if coherence < 0.25 or voice_weight < 0.35:
+            allowed = False
+            reason = (
+                "King Wen domain lock: consult is too unstable to authorize tool use"
+                f" (coherence={coherence:.2f}, voiceWeight={voice_weight:.2f})."
+            )
+        elif action_mismatch and category_mismatch and stability < 0.45:
+            allowed = False
+            wait = False
+            reason = (
+                "King Wen domain lock: tool intent conflicts with active consult frame"
+                f" action={action or 'neutral'}, category={category or 'neutral'}."
+            )
+        elif action_mismatch and category_mismatch:
+            allowed = True
+            wait = False
+            reason = (
+                "King Wen domain lock: tool intent conflicts with active consult frame"
+                f" action={action or 'neutral'}, category={category or 'neutral'}; allowing under explicit intent."
+            )
+        elif action_mismatch or category_mismatch:
+            allowed = True
+            wait = bool(stability < 0.55)
+            reason = (
+                "King Wen domain lock: partial mismatch on"
+                f" action={action or 'neutral'}, category={category or 'neutral'}; monitor for drift."
+            )
+        else:
+            allowed = True
+            wait = bool(stability < 0.5)
+            reason = "King Wen domain lock: tool aligns with active consult frame."
+        return {
+            "allowed": allowed,
+            "wait": wait,
+            "reason": reason,
+            "unicode": unicode_char or "",
+            "porosity": round(float(porosity), 4),
+            "vectors": {
+                "coherence": round(coherence, 4),
+                "voiceWeight": round(voice_weight, 4),
+                "chaos": round(chaos, 4),
+                "whimsy": round(whimsy, 4),
+                "darkTone": round(dark_tone, 4),
+            },
+            "action": action or "neutral",
+            "category": category or "neutral",
+            "stability": round(stability, 4),
+        }

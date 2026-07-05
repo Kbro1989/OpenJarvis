@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Optional
 
+import click
+
 logger = logging.getLogger(__name__)
 
 
@@ -154,11 +156,18 @@ class DashboardApp:
         app.run()
 
 
-def launch_dashboard(config: Optional[Any] = None) -> None:
-    """Convenience function to launch the dashboard."""
+@click.command("dashboard")
+@click.option("--config", "config_path", default=None, help="Path to config file.")
+def launch_dashboard(config_path: Optional[str] = None) -> None:
+    """Launch the TUI dashboard."""
+    config = None
+    if config_path:
+        from pathlib import Path
+
+        config = Path(config_path)
     app = DashboardApp(config=config)
     if not app.available():
-        raise ImportError(
+        raise click.ClickException(
             "TUI dashboard requires 'textual'. Install with: uv sync --extra dashboard"
         )
     app.run()

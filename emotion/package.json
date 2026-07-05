@@ -1,0 +1,12 @@
+{
+  "name": "openjarvis-emotion-kingwen",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/probe.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "probe": "node scripts/probe.js",
+    "test": "node --test tests/*.js"
+  }
+}

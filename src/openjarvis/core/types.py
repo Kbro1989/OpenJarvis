@@ -195,6 +195,17 @@ class TelemetryRecord:
     # `TOKEN_COUNTING_VERSION` from `server/savings.py`.
     token_counting_version: Optional[int] = None
     mining_session_id: Optional[str] = None
+    # King Wen emotional/hexagram metadata for training corpus capture.
+    hexagram_id: Optional[int] = None
+    hexagram_category: Optional[str] = None
+    hexagram_action: Optional[str] = None
+    voice_weight: Optional[float] = None
+    voice_backend: Optional[str] = None
+    voice_id: Optional[str] = None
+    voice_speed: Optional[float] = None
+    emotional_deltas: Optional[Dict[str, float]] = None
+    kingwen_training_notes: Optional[str] = None
+    kingwen_session_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -236,6 +247,16 @@ class TraceStep:
     input: Dict[str, Any] = field(default_factory=dict)
     output: Dict[str, Any] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    # King Wen capture fields for training corpus.
+    kingwen_session_id: Optional[str] = None
+    hexagram_id: Optional[int] = None
+    hexagram_category: Optional[str] = None
+    hexagram_action: Optional[str] = None
+    voice_weight: Optional[float] = None
+    voice_backend: Optional[str] = None
+    voice_id: Optional[str] = None
+    voice_speed: Optional[float] = None
+    emotional_deltas: Optional[Dict[str, float]] = None
 
 
 @dataclass(slots=True)

@@ -1,6 +1,7 @@
 import { EnergyDashboard } from '../components/Dashboard/EnergyDashboard';
 import { CostComparison } from '../components/Dashboard/CostComparison';
 import { TraceDebugger } from '../components/Dashboard/TraceDebugger';
+import { KingwenAdvisoryPanel } from '../components/Dashboard/KingwenAdvisoryPanel';
 
 export function DashboardPage() {
   const now = new Date();

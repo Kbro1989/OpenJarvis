@@ -13,9 +13,38 @@ from typing import Any, List, Optional
 
 from openjarvis.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
 from openjarvis.agents.digest_store import DigestArtifact, DigestStore
-from openjarvis.core.paths import get_config_dir
 from openjarvis.core.registry import AgentRegistry
+from openjarvis.core.paths import get_config_dir, get_kingwen_workspace_dir
 from openjarvis.core.types import Message, Role, ToolCall
+
+
+def _load_kingwen_emotion_provider(config: Any) -> Any | None:
+    """Build a King Wen emotion provider from DigestConfig if enabled."""
+    digest = getattr(config, "digest", None)
+    if digest is None or not getattr(digest, "emotion_enabled", False):
+        return None
+    try:
+        from openjarvis.emotion.kingwen import KingWenEmotionProvider
+
+        return KingWenEmotionProvider(
+            getattr(
+                digest,
+                "emotion_registry_path",
+                str(get_kingwen_workspace_dir() / "data" / "hexagram-registry.json"),
+            ),
+            getattr(
+                digest,
+                "emotion_weights_path",
+                str(get_kingwen_workspace_dir() / "data" / "emotional-weights.json"),
+            ),
+            getattr(
+                digest,
+                "emotion_reflections_path",
+                str(get_kingwen_workspace_dir() / "data" / "temporal-reflections.json"),
+            ),
+        )
+    except Exception:
+        return None
 
 
 def _load_persona(persona_name: str) -> str:
@@ -49,7 +78,38 @@ class MorningDigestAgent(ToolUsingAgent):
         self._tts_backend = kwargs.pop("tts_backend", "cartesia")
         self._digest_store_path = kwargs.pop("digest_store_path", "")
         self._honorific = kwargs.pop("honorific", "sir")
+        self._emotion_provider = kwargs.pop("emotion_provider", None)
+        self._last_emotion_payload = None
         super().__init__(*args, **kwargs)
+
+    def _apply_kingwen_voice_preset(self, text: str) -> None:
+        kingwen_preset = getattr(self, "_kingwen_voice_preset", None)
+        if kingwen_preset:
+            self._voice_id = str(kingwen_preset.get("voice_id", getattr(self, "_voice_id", "")) or "")
+            self._voice_speed = float(kingwen_preset.get("speed", getattr(self, "_voice_speed", 1.0)) or 1.0)
+            self._last_emotion_payload = getattr(self, "_last_emotion_payload", None)
+            return
+        provider = getattr(self, "_emotion_provider", None)
+        if provider is None or not text:
+            return
+        try:
+            payload = provider.consult(text=text, session_id="morning-digest")
+            preset = provider.voice_preset(
+                tts_backend=getattr(self, "_tts_backend", None) or "cartesia",
+                voice_weight=payload.get("emotional_deltas", {}).get("voiceWeight", 0.0),
+            )
+            self._voice_id = str(preset.get("voice_id", getattr(self, "_voice_id", "")) or "")
+            self._voice_speed = float(preset.get("speed", getattr(self, "_voice_speed", 1.0)) or 1.0)
+            self._last_emotion_payload = {
+                "hexagram_id": payload.get("hexagram_id"),
+                "voice_preset": preset,
+                "emotional_deltas": payload.get("emotional_deltas", {}),
+            }
+        except Exception:
+            self._last_emotion_payload = None
+
+    def _resolve_voice_preset(self, text: str) -> None:
+        self._apply_kingwen_voice_preset(text)
 
     def _build_system_prompt(self) -> str:
         """Assemble the system prompt from persona + briefing structure."""
@@ -129,6 +189,7 @@ class MorningDigestAgent(ToolUsingAgent):
         **kwargs: Any,
     ) -> AgentResult:
         self._emit_turn_start(input)
+        self._resolve_voice_preset(input)
 
         # Step 1: Collect data from connectors
         sources = self._resolve_sources()

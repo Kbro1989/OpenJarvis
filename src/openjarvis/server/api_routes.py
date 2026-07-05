@@ -552,7 +552,114 @@ async def get_session(session_id: str, request: Request):
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-# ---- Budget routes ----
+# ---- King Wen routes ----
+
+kingwen_router = APIRouter(prefix="/v1/kingwen", tags=["kingwen"])
+
+
+@kingwen_router.get("/avatar/{session_id}")
+async def kingwen_avatar(session_id: str, request: Request):
+    """Return live King Wen advisory state for the interactive avatar dashboard."""
+    try:
+        from openjarvis.core.paths import get_kingwen_workspace_dir
+        from openjarvis.emotion.kingwen import KingWenEmotionProvider
+
+        workspace = get_kingwen_workspace_dir()
+        provider = KingWenEmotionProvider(
+            registry_path=workspace / "data" / "hexagram-registry.json",
+            weights_path=workspace / "data" / "emotional-weights.json",
+            reflections_path=workspace / "data" / "temporal-reflections.json",
+        )
+        payload = provider.consult(text=session_id, session_id=session_id)
+        speech_cfg = getattr(getattr(request.app.state, "config", None), "speech", None)
+        tts_backend = getattr(speech_cfg, "backend", "cartesia") or "cartesia"
+        preset = provider.voice_preset(
+            tts_backend=tts_backend,
+            voice_weight=float(
+                payload.get("emotional_deltas", {}).get("voiceWeight", 0.5)
+            ),
+        )
+        oracle_console = provider.format_oracle_console(
+            payload=payload,
+            response_text="",
+            canonical_tick_ms=640.0,
+        )
+        return {
+            "session_id": session_id,
+            "hexagram_id": payload.get("hexagram_id"),
+            "hexagram_name": payload.get("hexagram_name"),
+            "unicode": payload.get("hexagram_unicode"),
+            "binary": payload.get("binary"),
+            "upper_trigram": payload.get("upper_trigram"),
+            "lower_trigram": payload.get("lower_trigram"),
+            "category": payload.get("category"),
+            "action": payload.get("action"),
+            "emotional_deltas": payload.get("emotional_deltas"),
+            "reflections": payload.get("reflections"),
+            "voice_preset": preset,
+            "oracle_console": oracle_console,
+            "canonical_tick_ms": 640.0,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@kingwen_router.post("/consult")
+async def kingwen_consult(req: Dict[str, Any], request: Request):
+    """Run a live King Wen consult from the frontend."""
+    text = str(req.get("text") or "").strip()
+    session_id = str(req.get("session_id") or "openjarvis").strip()
+    try:
+        from openjarvis.core.paths import get_kingwen_workspace_dir
+        from openjarvis.emotion.kingwen import KingWenEmotionProvider
+
+        if not text:
+            raise HTTPException(status_code=400, detail="text is required")
+
+        workspace = get_kingwen_workspace_dir()
+        provider = KingWenEmotionProvider(
+            registry_path=workspace / "data" / "hexagram-registry.json",
+            weights_path=workspace / "data" / "emotional-weights.json",
+            reflections_path=workspace / "data" / "temporal-reflections.json",
+        )
+        payload = provider.consult(text=text, session_id=session_id)
+        speech_cfg = getattr(getattr(request.app.state, "config", None), "speech", None)
+        tts_backend = getattr(speech_cfg, "backend", "cartesia") or "cartesia"
+        preset = provider.voice_preset(
+            tts_backend=tts_backend,
+            voice_weight=float(
+                payload.get("emotional_deltas", {}).get("voiceWeight", 0.5)
+            ),
+        )
+        oracle_console = provider.format_oracle_console(
+            payload=payload,
+            response_text="",
+            canonical_tick_ms=640.0,
+        )
+        return {
+            "session_id": session_id,
+            "query": text,
+            "hexagram_id": payload.get("hexagram_id"),
+            "hexagram_name": payload.get("hexagram_name"),
+            "unicode": payload.get("hexagram_unicode"),
+            "binary": payload.get("binary"),
+            "upper_trigram": payload.get("upper_trigram"),
+            "lower_trigram": payload.get("lower_trigram"),
+            "category": payload.get("category"),
+            "action": payload.get("action"),
+            "emotional_deltas": payload.get("emotional_deltas"),
+            "reflections": payload.get("reflections"),
+            "voice_preset": preset,
+            "oracle_console": oracle_console,
+            "canonical_tick_ms": 640.0,
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
 
 budget_router = APIRouter(prefix="/v1/budget", tags=["budget"])
 
@@ -1053,6 +1160,7 @@ def include_all_routes(app) -> None:
     app.include_router(sessions_router)
     app.include_router(budget_router)
     app.include_router(metrics_router)
+    app.include_router(kingwen_router)
     app.include_router(websocket_router)
     app.include_router(learning_router)
     app.include_router(speech_router)
@@ -1090,6 +1198,14 @@ def include_all_routes(app) -> None:
         app.include_router(ws_router)
     except Exception:
         logger.debug("WebSocket bridge not available", exc_info=True)
+
+    # Desktop execution bridge for local program/shell dispatch.
+    try:
+        from openjarvis.bridge_servers.desktop_execution import router as desktop_router
+
+        app.include_router(desktop_router)
+    except Exception:
+        logger.debug("Desktop execution routes not available", exc_info=True)
 
 
 __all__ = [

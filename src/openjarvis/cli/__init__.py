@@ -19,6 +19,8 @@ from openjarvis.cli.connect_cmd import connect
 from openjarvis.cli.daemon_cmd import restart, start, status, stop
 from openjarvis.cli.digest_cmd import digest
 from openjarvis.cli.doctor_cmd import doctor
+from openjarvis.cli.dashboard import launch_dashboard
+from openjarvis.cli.inject_cmd import inject
 from openjarvis.cli.eval_cmd import eval_group
 from openjarvis.cli.feedback_cmd import feedback_group
 from openjarvis.cli.gateway_cmd import gateway
@@ -106,6 +108,8 @@ cli.add_command(channel, "channel")
 cli.add_command(channels, "channels")
 cli.add_command(scheduler, "scheduler")
 cli.add_command(doctor, "doctor")
+cli.add_command(launch_dashboard, "dashboard")
+cli.add_command(inject, "inject")
 cli.add_command(agent, "agents")
 cli.add_command(workflow, "workflow")
 cli.add_command(skill, "skill")

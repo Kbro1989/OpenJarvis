@@ -120,3 +120,37 @@ def get_cache_dir() -> Path:
     directory instead of scattering across ``~/.cache``.
     """
     return get_config_dir() / "cache"
+
+
+_KING_WEN_WORKSPACE_OVERRIDE = os.environ.get("KING_WEN_IMMUTABLE_TABLES")
+
+
+def get_kingwen_workspace_dir() -> Path:
+    """Resolve the King Wen immutable tables workspace.
+
+    Precedence:
+        ``KING_WEN_IMMUTABLE_TABLES`` env > current working directory fallback.
+
+    No path is hardcoded in the translation layer; callers that need a
+    default should resolve one externally.
+    """
+    raw = _KING_WEN_WORKSPACE_OVERRIDE
+    if raw:
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        return path.resolve()
+
+    try:
+        source_root = _find_source_root() or Path(__file__).resolve().parents[3]
+        candidate = source_root / "KING-WEN-I-CHING-IMMUTABLE-TABLES"
+        if candidate.exists() and candidate.is_dir():
+            return candidate.resolve()
+    except Exception:
+        pass
+
+    known_desktop_fallback = Path(r"C:\Users\krist\Desktop\KING-WEN-I-CHING-IMMUTABLE-TABLES")
+    if known_desktop_fallback.exists() and known_desktop_fallback.is_dir():
+        return known_desktop_fallback.resolve()
+
+    return Path.cwd().resolve()

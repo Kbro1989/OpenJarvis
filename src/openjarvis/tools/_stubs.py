@@ -107,6 +107,7 @@ class ToolExecutor:
         capability_policy: Optional[Any] = None,
         agent_id: str = "",
         boundary_guard: Optional[Any] = None,
+        managed_agent: Optional[Any] = None,
     ) -> None:
         self._tools: Dict[str, BaseTool] = {t.spec.name: t for t in tools}
         self._bus = bus
@@ -116,6 +117,7 @@ class ToolExecutor:
         self._capability_policy = capability_policy
         self._agent_id = agent_id
         self._boundary_guard = boundary_guard
+        self._managed_agent = managed_agent
 
     def execute(self, tool_call: ToolCall) -> ToolResult:
         """Parse arguments, dispatch to tool, measure latency, emit events."""
@@ -176,6 +178,101 @@ class ToolExecutor:
                         ),
                         success=False,
                     )
+
+        kingwen_lock = None
+        try:
+            from openjarvis.agents._stubs import BaseAgent
+            from openjarvis.emotion.kingwen import KingWenEmotionProvider
+            active_agent = getattr(self, "_managed_agent", None)
+            if active_agent is None:
+                for maybe in [self._boundary_guard, self._capability_policy]:
+                    if isinstance(maybe, BaseAgent):
+                        active_agent = maybe
+                        break
+            if active_agent is not None and getattr(active_agent, "_kingwen_wait", False):
+                return ToolResult(
+                    tool_name=tool_call.name,
+                    content=(
+                        "King Wen consult deferred tool execution."
+                        " stability=unresolved, wait=True."
+                    ),
+                    success=False,
+                )
+            action = str(tool_call.name or "").lower()
+            category = str(getattr(tool, "spec", None) and getattr(getattr(tool, "spec", None), "category", "") or "").lower()
+            if active_agent is not None:
+                provider = getattr(active_agent, "_emotion_provider", None)
+                tongue = getattr(active_agent, "_current_emotional_tongue", {}) or {}
+                if not tongue and getattr(active_agent, "_kingwen_save_string", ""):
+                    try:
+                        if isinstance(provider, KingWenEmotionProvider):
+                            tongue = provider.decode_tongue(getattr(active_agent, "_kingwen_save_string", "") or "")
+                    except Exception:
+                        tongue = {}
+                if isinstance(provider, KingWenEmotionProvider) and tongue:
+                    unicode_char = str(tongue.get("unicode") or tongue.get("hexagram_unicode") or "")
+                    porosity = float(tongue.get("porosity", 0.35))
+                    vectors = tongue.get("training_weight_vectors") or {}
+                    kingwen_lock = provider.resolve_domain_lock_for_tool(
+                        unicode_char=unicode_char,
+                        porosity=porosity,
+                        vectors=vectors,
+                        tool_name=tool_call.name,
+                        tool_category=category,
+                    )
+                    if kingwen_lock.get("wait"):
+                        if self._bus:
+                            try:
+                                self._bus.publish(
+                                    EventType.TOOL_CALL_WAIT,
+                                    {
+                                        "tool": tool_call.name,
+                                        "action": kingwen_lock.get("action", "neutral"),
+                                        "category": kingwen_lock.get("category", "neutral"),
+                                        "coherence": kingwen_lock.get("vectors", {}).get("coherence"),
+                                        "voiceWeight": kingwen_lock.get("vectors", {}).get("voiceWeight"),
+                                        "porosity": kingwen_lock.get("porosity"),
+                                        "stability": kingwen_lock.get("stability"),
+                                        "wait": True,
+                                        "reason": kingwen_lock.get("reason", ""),
+                                    },
+                                )
+                            except Exception:
+                                pass
+                        return ToolResult(
+                            tool_name=tool_call.name,
+                            content=(
+                                "King Wen domain lock: deferred due to unresolved consult state."
+                                f" stability={kingwen_lock.get('stability')}, wait=True."
+                            ),
+                            success=False,
+                        )
+                    if not kingwen_lock.get("allowed", True):
+                        if self._bus:
+                            try:
+                                self._bus.publish(
+                                    EventType.TOOL_CALL_CONSCIENCE_WARNING,
+                                    {
+                                        "tool": tool_call.name,
+                                        "action": kingwen_lock.get("action", "neutral"),
+                                        "category": kingwen_lock.get("category", "neutral"),
+                                        "coherence": kingwen_lock.get("vectors", {}).get("coherence"),
+                                        "voiceWeight": kingwen_lock.get("vectors", {}).get("voiceWeight"),
+                                        "porosity": kingwen_lock.get("porosity"),
+                                        "stability": kingwen_lock.get("stability"),
+                                        "allowed": False,
+                                        "reason": kingwen_lock.get("reason", ""),
+                                    },
+                                )
+                            except Exception:
+                                pass
+                        return ToolResult(
+                            tool_name=tool_call.name,
+                            content=kingwen_lock.get("reason", "King Wen domain lock blocked this tool call."),
+                            success=False,
+                        )
+        except Exception:
+            kingwen_lock = None
 
         # Taint checking (sink policy)
         taint_set = params.get("_taint") if isinstance(params, dict) else None

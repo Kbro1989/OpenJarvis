@@ -839,11 +839,15 @@ async def list_models(request: Request) -> ModelListResponse:
     from openjarvis.server.cloud_router import is_cloud_model, list_local_models
 
     # Prefer engine.list_models() so mock engines work in tests.
-    # Filter out any cloud model IDs that may appear via MultiEngine.
-    # Fall back to direct Ollama query only when the engine returns nothing.
     engine = request.app.state.engine
     all_ids = await asyncio.to_thread(engine.list_models)
-    model_ids = [m for m in all_ids if not is_cloud_model(m)]
+    # Only filter cloud models when the serving engine is itself a cloud
+    # backend. Local engines such as Ollama/Hermes/Nous portal may legitimately
+    # serve OpenRouter-style model IDs, and those should still appear here.
+    if getattr(engine, "is_cloud", False):
+        model_ids = [m for m in all_ids if not is_cloud_model(m)]
+    else:
+        model_ids = list(all_ids)
     if not model_ids:
         model_ids = await list_local_models()
 
@@ -1098,6 +1102,12 @@ async def health(request: Request):
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
     return {"status": "ok"}
+
+
+@router.get("/v1/health")
+async def v1_health(request: Request):
+    """OpenAI-compatible health alias."""
+    return await health(request)
 
 
 # ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@ _HOST_MAP: Dict[str, str | None] = {
     "cloud": None,
     "litellm": None,
     "gemma_cpp": None,
+    "hermes": None,
 }
 
 
@@ -43,6 +44,16 @@ def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
             tokenizer_path=cfg.tokenizer_path or None,
             model_type=cfg.model_type or None,
             num_threads=cfg.num_threads,
+        )
+
+    if key == "hermes":
+        cfg = config.engine.hermes
+        return cls(
+            path=cfg.path or None,
+            python_executable=cfg.python_executable or None,
+            api_mode=cfg.api_mode,
+            max_iterations=cfg.max_iterations,
+            timeout_seconds=cfg.timeout_seconds,
         )
 
     host_attr = _HOST_MAP.get(key)

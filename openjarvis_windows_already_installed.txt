@@ -1,0 +1,123 @@
+
+================================================================================
+OPENJARVIS ON WINDOWS — ALREADY DOWNLOADED
+================================================================================
+
+If you already have OpenJarvis installed on Windows, here's the correct
+workflow to start it with Ollama as the backend engine.
+
+================================================================================
+STEP 1: VERIFY OLLAMA IS RUNNING
+================================================================================
+
+Open PowerShell or CMD and check:
+
+    curl http://localhost:11434/api/tags
+
+Or in PowerShell:
+    (Invoke-WebRequest -Uri http://localhost:11434/api/tags).Content | ConvertFrom-Json
+
+If Ollama is NOT running:
+    - Look for the Ollama tray icon in your system tray
+    - Right-click -> Start Ollama
+    - Or run: ollama serve
+
+If Ollama is NOT installed:
+    Download from https://ollama.com/download/windows
+    Or run: irm https://ollama.com/install.ps1 | iex
+
+================================================================================
+STEP 2: VERIFY OPENJARVIS IS INSTALLED
+================================================================================
+
+Check if jarvis command is available:
+
+    jarvis --version
+
+Or check installation location:
+    where jarvis
+    # Typically: %LOCALAPPDATA%\Programs\OpenJarvis\jarvis.exe
+    # Or if installed via pip/uv: in your Python Scripts directory
+
+If jarvis is NOT found but you downloaded it:
+    - Check your Downloads folder for OpenJarvis installer
+    - Run the .exe installer
+    - Or if it's a portable/zip: extract and add to PATH
+
+================================================================================
+STEP 3: START OPENJARVIS (AUTO-DETECTS OLLAMA)
+================================================================================
+
+Once both are installed, simply run:
+
+    jarvis
+
+This will:
+1. Auto-detect Ollama running on localhost:11434
+2. Load the default model (or prompt you to pull one)
+3. Start the interactive chat interface
+
+If you want to start the API server instead:
+
+    jarvis serve --port 8000
+
+Then access the web UI at http://localhost:5173 (if frontend is running)
+or use the API at http://localhost:8000/v1
+
+================================================================================
+STEP 4: PULL MODELS (IF NOT ALREADY DONE)
+================================================================================
+
+If you don't have models yet, pull them via Ollama:
+
+    ollama pull qwen3:0.6b        # Small, fast starter model
+    ollama pull qwen3.5:35b       # Larger, more capable
+    ollama pull codellama:7b      # Code-focused
+    ollama pull gemma4            # Vision-capable
+    ollama pull nomic-embed-text  # Embeddings
+
+Then use them in OpenJarvis:
+
+    jarvis ask -m qwen3.5:35b "Your question here"
+
+================================================================================
+STEP 5: USE PRESETS (OPTIONAL)
+================================================================================
+
+Set up a pre-configured agent:
+
+    jarvis init --preset chat-simple
+    jarvis init --preset code-assistant
+    jarvis init --preset deep-research
+    jarvis init --preset morning-digest-windows
+
+================================================================================
+WINDOWS-SPECIFIC NOTES
+================================================================================
+
+Ollama on Windows:
+- Runs as a tray application (check system tray)
+- Installs in %LOCALAPPDATA%\Programs\Ollama
+- Models stored in %HOMEPATH%\.ollama
+- Logs in %LOCALAPPDATA%\Ollama
+
+OpenJarvis on Windows:
+- Native installer available (.exe)
+- Or install via PowerShell: irm https://open-jarvis.github.io/OpenJarvis/install.ps1 | iex
+- Uses WSL2 backend for some features (recommended)
+
+Environment Variables (if needed):
+- Set via Windows Settings -> System -> Advanced -> Environment Variables
+- Or PowerShell: [Environment]::SetEnvironmentVariable("OLLAMA_HOST", "127.0.0.1:11434", "User")
+
+================================================================================
+QUICK START CHECKLIST
+================================================================================
+
+[ ] Ollama installed and running (check tray icon or localhost:11434)
+[ ] OpenJarvis installed (jarvis --version works)
+[ ] At least one model pulled (ollama list shows models)
+[ ] Run jarvis to start
+[ ] Access web UI at http://localhost:5173 (if using desktop)
+
+================================================================================

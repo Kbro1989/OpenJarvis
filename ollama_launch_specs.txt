@@ -1,0 +1,339 @@
+
+================================================================================
+OLLAMA LAUNCH — COMPLETE SPECIFICATIONS
+================================================================================
+
+Command: ollama launch [integration] [options]
+Introduced: Ollama v0.15 (January 2026)
+Purpose: Zero-config, one-line setup for AI coding assistants running against
+         local or cloud Ollama models. No environment variables or config files needed.
+
+================================================================================
+SUPPORTED INTEGRATIONS
+================================================================================
+
+| Integration | Tool | Description | Context Requirement |
+|-------------|------|-------------|---------------------|
+| claude | Claude Code | Anthropic's agentic coding tool | >=64k tokens |
+| codex | Codex CLI | OpenAI's coding assistant | >=64k tokens |
+| droid | Droid | Factory's AI coding agent | >=64k tokens |
+| opencode | OpenCode | Open-source coding assistant | >=64k tokens |
+| openclaw | OpenClaw | Personal AI assistant (messaging bridge) | >=64k tokens |
+| vscode | VS Code | Microsoft IDE with Copilot Chat | >=64k tokens |
+| pi | Pi | Minimal extensible coding agent | >=64k tokens |
+
+Aliases:
+- clawdbot -> openclaw (legacy name, still works)
+
+================================================================================
+COMMAND SYNTAX
+================================================================================
+
+# Interactive picker — choose integration from menu
+ollama launch
+
+# Launch specific integration
+ollama launch claude
+ollama launch codex
+ollama launch droid
+ollama launch opencode
+ollama launch openclaw
+ollama launch vscode
+ollama launch pi
+
+# Launch with specific model
+ollama launch claude --model qwen3.5
+ollama launch codex --model gpt-oss:120b
+ollama launch opencode --model glm-4.7-flash
+ollama launch openclaw --model kimi-k2.5:cloud
+ollama launch vscode --model qwen3.5:cloud
+ollama launch pi --model qwen3.5:cloud
+
+# Configure without launching (inspect settings)
+ollama launch droid --config
+ollama launch opencode --config
+ollama launch codex --config
+ollama launch openclaw --config
+ollama launch pi --config
+
+# Non-interactive / headless mode (for Docker, CI/CD, scripts)
+ollama launch claude --model gemma4:cloud --yes -- -p "how does this repo work?"
+ollama launch openclaw --model kimi-k2.5:cloud --yes
+
+# The --yes flag:
+#   - Skips selectors
+#   - Auto-pulls model when needed
+#   - REQUIRES --model to be specified
+
+# Restore/remove Ollama launch profile (Codex only)
+ollama launch codex --restore
+
+================================================================================
+GLOBAL OPTIONS
+================================================================================
+
+| Flag | Description |
+|------|-------------|
+| --model <model> | Specify model to use |
+| --config | Configure integration without launching |
+| --yes | Non-interactive mode (requires --model) |
+| --restore | Remove Ollama launch profile (Codex only) |
+
+Arguments after -- are passed directly to the integration tool.
+
+================================================================================
+PER-INTEGRATION SPECS
+================================================================================
+
+--- CLAUDE CODE ---
+Command: ollama launch claude
+
+Capabilities:
+  - Chat (ask questions about repo/task)
+  - Command line (run commands with permission flow)
+  - Tool calling (with compatible models)
+  - File edits (read and edit files)
+  - Subagents (split work across tasks)
+  - Web search (via Ollama web search API)
+  - Web fetch (fetch and summarize web pages)
+  - Vision (send images and screenshots)
+  - Thinking (use thinking controls with compatible models)
+
+Non-interactive:
+  ollama launch claude --model gemma4:cloud --yes -- -p "how does this repository work?"
+
+Scheduled tasks:
+  /loop <interval> <prompt or /command>
+  Examples:
+    /loop 30m Check my open PRs and summarize their status
+    /loop 1h Research the latest AI news and summarize key developments
+    /loop 15m Check for new GitHub issues and triage by priority
+
+Telegram integration:
+  ollama launch claude -- --channels plugin:telegram@claude-plugins-official
+  (Requires --dangerously-skip-permissions for autonomous bot operation)
+
+--- CODEX CLI ---
+Command: ollama launch codex
+
+Install prerequisite:
+  npm install -g @openai/codex
+
+Quick setup:
+  ollama launch codex
+
+Configure without launching:
+  ollama launch codex --config
+
+Restore (remove Ollama profile and generated model catalog):
+  ollama launch codex --restore
+
+Manual setup (without ollama launch):
+  codex --oss
+  codex --oss -m gpt-oss:120b
+  codex --oss -m gpt-oss:120b-cloud
+
+Profile-based persistent config:
+  Create ~/.codex/ollama-launch.config.toml:
+    model = "gpt-oss:120b"
+    model_provider = "ollama-launch"
+    model_catalog_json = "/Users/you/.codex/model.json"
+    [model_providers.ollama-launch]
+    name = "Ollama"
+    base_url = "http://localhost:11434/v1/"
+    wire_api = "responses"
+  Then: codex --profile ollama-launch
+
+--- OPENCODE ---
+Command: ollama launch opencode
+
+Install prerequisite:
+  curl -fsSL https://opencode.ai/install | bash
+
+Quick setup:
+  ollama launch opencode
+
+Configure without launching:
+  ollama launch opencode --config
+
+Manual setup (without ollama launch):
+  Add Ollama provider to opencode.json:
+    {
+      "$schema": "https://opencode.ai/config.json",
+      "provider": {
+        "ollama": {
+          "npm": "@ai-sdk/openai-compatible",
+          "name": "Ollama",
+          "options": { "baseURL": "http://localhost:11434/v1" },
+          "models": { "qwen3.5": { "name": "qwen3.5" } }
+        }
+      }
+    }
+
+Configuration precedence:
+  - ollama launch opencode starts with inline config for selected model
+  - Does NOT overwrite ~/.config/opencode/opencode.json
+  - Existing OpenCode settings still apply
+  - Models defined only in opencode.json do not appear in ollama launch picker
+
+Capabilities:
+  - Chat, Command line, File edits, Subagents, Web fetch, Vision
+
+--- OPENCLAW ---
+Command: ollama launch openclaw
+
+Quick setup:
+  ollama launch openclaw
+
+What Ollama handles automatically:
+  1. Install — prompts to install via npm if not installed
+  2. Security — explains tool access risks on first launch
+  3. Model — picker for local or cloud models
+  4. Onboarding — configures provider, installs gateway daemon,
+     sets model as primary, enables bundled web search
+  5. Gateway — starts in background, opens OpenClaw TUI
+
+Configure without launching:
+  ollama launch openclaw --config
+
+Run with specific model:
+  ollama launch openclaw --model kimi-k2.5:cloud
+
+Non-interactive:
+  ollama launch openclaw --model kimi-k2.5:cloud --yes
+
+Web search:
+  - Bundled Ollama web_search provider enabled automatically
+  - Requires ollama signin for local models
+  - Manual config: openclaw configure --section web
+
+Connect messaging apps:
+  openclaw configure --section channels
+  (WhatsApp, Telegram, Slack, Discord, iMessage)
+
+Stop gateway:
+  openclaw gateway stop
+
+Recommended cloud models:
+  - kimi-k2.5:cloud (multimodal reasoning with subagents)
+  - qwen3.5:cloud (reasoning, coding, agentic tool use with vision)
+  - glm-5.1:cloud (reasoning and code generation)
+  - minimax-m2.7:cloud (fast, efficient coding)
+
+Recommended local models:
+  - gemma4 (~16 GB VRAM)
+  - qwen3.5 (~11 GB VRAM)
+
+--- VS CODE ---
+Command: ollama launch vscode
+
+Prerequisites:
+  - Ollama v0.18.3+
+  - VS Code 1.113+
+  - GitHub Copilot Chat extension 0.41.0+
+  - GitHub account (Copilot Free enables model selection for custom models)
+
+Quick setup:
+  ollama launch vscode
+
+Run with model:
+  ollama launch vscode --model qwen3.5:cloud
+
+Manual setup (without ollama launch):
+  1. Open Copilot Chat sidebar
+  2. Click settings gear icon -> Language Models window
+  3. Click Add Models -> select Ollama
+  4. Click Unhide in model picker to show Ollama models
+  5. Select Local at bottom of Copilot Chat panel
+
+--- PI ---
+Command: ollama launch pi
+
+Quick setup:
+  ollama launch pi
+
+Configure without launching:
+  ollama launch pi --config
+
+Run with model:
+  ollama launch pi --model qwen3.5:cloud
+
+Extensions (on-demand via /skill:name):
+  - Core tools: read, write, edit, bash
+  - Install: pi install npm:@foo/some-tools
+  - Web search: pi install npm:@ollama/pi-web-search (auto with ollama launch)
+  - Autoresearch: pi install https://github.com/davebcn87/pi-autoresearch
+
+--- DROID ---
+Command: ollama launch droid
+
+Configure without launching:
+  ollama launch droid --config
+
+================================================================================
+RECOMMENDED MODELS FOR CODING
+================================================================================
+
+Context requirement: ALL integrations need >=64k tokens context length.
+Set in Ollama app settings or via OLLAMA_CONTEXT_LENGTH env var.
+
+Local Models:
+| Model | Notes | Approx VRAM |
+|-------|-------|-------------|
+| glm-4.7-flash | Fast, good reasoning | ~23 GB |
+| qwen3-coder | Strong coding, long context | varies |
+| gpt-oss:20b | OpenAI open source model | varies |
+| gemma4 | Reasoning and code generation | ~16 GB |
+| qwen3.5 | Reasoning, coding, vision | ~11 GB |
+| devstral:24b | Mistral coding-focused | varies |
+
+Cloud Models (require ollama signin):
+| Model | Notes |
+|-------|-------|
+| glm-4.7:cloud | Full context, generous limits |
+| minimax-m2.1:cloud | Fast coding |
+| gpt-oss:120b-cloud | Large open source model |
+| qwen3-coder:480b-cloud | Massive coding model |
+| kimi-k2.5:cloud | Multimodal reasoning |
+| glm-5.1:cloud | Reasoning and code generation |
+| minimax-m2.7:cloud | Fast, efficient coding |
+
+================================================================================
+API COMPATIBILITY NOTES
+================================================================================
+
+Claude Code:
+  - Ollama exposes Anthropic-compatible API
+  - Base URL: http://localhost:11434
+  - Auth token: "ollama" (or any non-empty string for local)
+  - Environment: ANTHROPIC_BASE_URL="http://localhost:11434"
+                 ANTHROPIC_AUTH_TOKEN="ollama"
+
+Codex:
+  - Ollama exposes OpenAI-compatible API at /v1
+  - Base URL: http://localhost:11434/v1
+  - API key: "ollama" (or any non-empty string for local)
+
+OpenCode:
+  - Uses @ai-sdk/openai-compatible npm package
+  - Base URL: http://localhost:11434/v1
+
+VS Code:
+  - Uses GitHub Copilot Chat model picker
+  - Ollama appears as custom model provider
+
+================================================================================
+OLLAMA LAUNCH FLOW
+================================================================================
+
+1. User runs: ollama launch [integration] [--model <model>] [--config] [--yes]
+2. Ollama checks if integration tool is installed
+3. If not installed: prompts to install (npm, curl, etc.)
+4. If --model specified: validates model availability, auto-pulls if needed
+5. If --config: writes config files, exits without launching
+6. If --yes: skips all interactive prompts, uses defaults
+7. Ollama configures the integration to point to local Ollama API
+8. Launches the integration tool with configured model
+9. Integration tool connects to Ollama API for inference
+
+================================================================================

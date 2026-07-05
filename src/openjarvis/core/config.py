@@ -445,6 +445,17 @@ class LemonadeEngineConfig:
     host: str = "http://localhost:13305"
 
 
+@dataclass(slots=True)
+class HermesRuntimeConfig:
+    """Per-engine config for the local Hermes runtime backend."""
+
+    path: str = ""
+    python_executable: str = ""
+    api_mode: str = "chat_completions"
+    max_iterations: int = 90
+    timeout_seconds: float = 600.0
+
+
 @dataclass
 class EngineConfig:
     """Inference engine settings with nested per-engine configs."""
@@ -462,6 +473,7 @@ class EngineConfig:
     apple_fm: AppleFmEngineConfig = field(default_factory=AppleFmEngineConfig)
     gemma_cpp: GemmaCppEngineConfig = field(default_factory=GemmaCppEngineConfig)
     lemonade: LemonadeEngineConfig = field(default_factory=LemonadeEngineConfig)
+    hermes: HermesRuntimeConfig = field(default_factory=HermesRuntimeConfig)
 
     # Backward-compat properties for old flat attribute names
     @property
@@ -1497,6 +1509,28 @@ class SystemPromptConfig:
 
 
 @dataclass(slots=True)
+class KingWenEmotionConfig:
+    """Optional King Wen emotion provider settings."""
+
+    registry_path: str = field(
+        default_factory=lambda: str(
+            get_kingwen_workspace_dir() / "data" / "hexagram-registry.json"
+        )
+    )
+    weights_path: str = field(
+        default_factory=lambda: str(
+            get_kingwen_workspace_dir() / "data" / "emotional-weights.json"
+        )
+    )
+    reflections_path: str = field(
+        default_factory=lambda: str(
+            get_kingwen_workspace_dir() / "data" / "temporal-reflections.json"
+        )
+    )
+    enabled: bool = False
+
+
+@dataclass(slots=True)
 class CompressionConfig:
     """Configuration for context compression."""
 
@@ -1561,6 +1595,10 @@ class DigestConfig:
     voice_id: str = ""
     voice_speed: float = 1.0
     tts_backend: str = "cartesia"
+    emotion_enabled: bool = False
+    emotion_registry_path: str = field(default_factory=lambda: str(get_config_dir() / "kingwen" / "hexagram-registry.json"))
+    emotion_weights_path: str = field(default_factory=lambda: str(get_config_dir() / "kingwen" / "emotional-weights.json"))
+    emotion_reflections_path: str = field(default_factory=lambda: str(get_config_dir() / "kingwen" / "temporal-reflections.json"))
     messages: DigestSectionConfig = field(
         default_factory=lambda: DigestSectionConfig(
             sources=["gmail", "slack", "google_tasks"]

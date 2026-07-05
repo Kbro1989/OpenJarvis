@@ -135,6 +135,7 @@ class BaseAgent(ABC):
                     session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
                     emotional_input=getattr(self, "_emotion_input", 50),
                 )
+                self._kingwen_consult_payload = payload
                 preset = provider.voice_preset(
                     tts_backend=getattr(self, "_tts_backend", None) or "cartesia",
                     voice_weight=float(
@@ -145,6 +146,22 @@ class BaseAgent(ABC):
                 self._kingwen_voice_section = provider.format_voice_section(preset)
                 tongue = payload.get("emotional_tongue") or {}
                 self._current_emotional_tongue = tongue
+                try:
+                    self._kingwen_call_sign = provider.get_kingwen_call_sign(
+                        text=input,
+                        session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
+                        hexagram_id=int(payload.get("hexagram_id") or 0) or None,
+                        phase_bits=int(payload.get("phase_bits") or 0),
+                    )
+                except Exception:
+                    self._kingwen_call_sign = None
+                self._kingwen_save_string = provider.encode_tongue(tongue or {})
+                self._kingwen_wait = bool(
+                    payload.get("wait")
+                    or payload.get("_wait")
+                    or ((payload.get("emotional_deltas", {}) or {}).get("coherence", 1.0) < 0.25)
+                    or ((payload.get("emotional_deltas", {}) or {}).get("voiceWeight", 1.0) < 0.35)
+                )
                 history = getattr(self, "_kingwen_history", None)
                 if history is not None:
                     history.append(
@@ -249,6 +266,9 @@ class BaseAgent(ABC):
         tongue_prompt = self._build_emotional_tongue_prompt()
         if tongue_prompt:
             messages.append(Message(role=Role.SYSTEM, content=tongue_prompt))
+        meta_prompt = self._build_kingwen_meta_awareness_prompt()
+        if meta_prompt:
+            messages.append(Message(role=Role.SYSTEM, content=meta_prompt))
         if context and context.conversation.messages:
             messages.extend(context.conversation.messages)
         messages.append(Message(role=Role.USER, content=input))
@@ -469,6 +489,52 @@ class BaseAgent(ABC):
         ]
         return "\n".join(lines)
 
+    def _build_kingwen_meta_awareness_prompt(self) -> str:
+        """Make the model aware of what King Wen selected and why for this turn."""
+        provider = getattr(self, "_emotion_provider", None)
+        if provider is None:
+            return ""
+        tongue = getattr(self, "_current_emotional_tongue", {}) or {}
+        history = getattr(self, "_kingwen_history", None) or []
+        if not tongue and not history:
+            return ""
+        latest = history[-1] if history else {}
+        payload = {
+            "hexagram_id": latest.get("hexagram_id") or tongue.get("hexagram_id"),
+            "hexagram_name": latest.get("hexagram_name", ""),
+            "action": latest.get("action", "") or tongue.get("action", ""),
+            "category": latest.get("category", "") or tongue.get("category", ""),
+            "phase_temporal": latest.get("phase_temporal", "") or tongue.get("phase_temporal", ""),
+            "reaction_frame": latest.get("reaction_frame", "") or tongue.get("reaction_frame", ""),
+            "emotional_deltas": {
+                "voiceWeight": latest.get("voice_weight", tongue.get("voice_weight", 0.0)),
+                "coherence": latest.get("coherence", tongue.get("coherence", 0.0)),
+                "chaos": latest.get("chaos", tongue.get("chaos", 0.0)),
+                "whimsy": latest.get("whimsy", tongue.get("whimsy", 0.0)),
+                "darkTone": latest.get("dark_tone", tongue.get("dark_tone", 0.0)),
+            },
+            "save_string": getattr(self, "_kingwen_save_string", "") or provider.encode_tongue(tongue or {}),
+        }
+        formatted = provider.format_oracle_console_with_tongue(payload)
+        if not formatted:
+            return ""
+        lines = [
+            "## King Wen Meta Awareness",
+            "",
+            "You are not just responding to the user. You are responding through an active "
+            "King Wen consult that selected this hexagram and emotional state from the user's input. "
+            "The model output should explicitly reflect this state, including tone, caution, certainty, "
+            "and style. It should understand why this state is active from the input.",
+            "",
+            "Oracle Frame",
+            formatted,
+            "",
+            "Apply this frame directly: short-term emotion drives tone and style; long-term structural "
+            "orientation drives intent and action. Do not narrate the oracle in third person — embody "
+            "this frame as the first-person reasoning context for what you are about to say.",
+        ]
+        return "\n".join(lines)
+
     def _build_kingwen_tail_with_intent(self, user_input: str) -> str:
         """Unified tail renderer: intent guidance + directive + Oracle Console response block.
 
@@ -620,6 +686,7 @@ class ToolUsingAgent(BaseAgent):
             agent_id=_aid,
             interactive=interactive,
             confirm_callback=confirm_callback,
+            managed_agent=self,
         )
         # Resolve max_turns: explicit arg > config > class default > 10
         if max_turns is not None:

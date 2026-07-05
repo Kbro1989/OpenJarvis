@@ -1,0 +1,1074 @@
+
+================================================================================
+OPTIMAL MULTI-SERVICE OLLAMA ROUTING CONFIGURATIONS
+================================================================================
+Comprehensive guide for production multi-instance, multi-model, and multi-service
+Ollama deployments with load balancing, routing, and gateway configurations.
+
+================================================================================
+TABLE OF CONTENTS
+================================================================================
+1. Architecture Patterns
+2. Single-Machine Multi-GPU Routing
+3. Multi-Machine Cluster Routing
+4. Model-Aware Routing
+5. Service-Based Routing (Task-Specific)
+6. Nginx Configuration Templates
+7. HAProxy Configuration Templates
+8. LiteLLM Proxy Configuration
+9. Custom FastAPI Router
+10. Docker Compose Multi-Service Setup
+11. Kubernetes Deployment
+12. Environment Variable Reference
+13. Monitoring & Health Checks
+14. Performance Tuning
+
+================================================================================
+1. ARCHITECTURE PATTERNS
+================================================================================
+
+Pattern A: Single Instance (Default)
+------------------------------------
+Client -> Ollama (localhost:11434)
+
+Pattern B: Multi-Instance Same Machine (Multi-GPU)
+---------------------------------------------------
+Client -> Load Balancer (Nginx/HAProxy) -> Ollama Instance 1 (GPU 0, :11434)
+                                        -> Ollama Instance 2 (GPU 1, :11435)
+                                        -> Ollama Instance 3 (GPU 2, :11436)
+                                        -> Ollama Instance N (GPU N, :11433+N)
+
+Pattern C: Multi-Machine Cluster
+---------------------------------
+Client -> Load Balancer -> Ollama Node 1 (192.168.1.10:11434)
+                        -> Ollama Node 2 (192.168.1.11:11434)
+                        -> Ollama Node 3 (192.168.1.12:11434)
+
+Pattern D: Model-Aware Routing
+-------------------------------
+Client -> Router -> Code Model (codellama:11435)   [if task=code]
+                 -> Chat Model (llama3:11434)      [if task=chat]
+                 -> Vision Model (gemma4:11436)    [if task=vision]
+                 -> Embed Model (nomic:11437)      [if task=embed]
+
+Pattern E: Service-Based Routing (Multi-Tenant)
+------------------------------------------------
+Client -> API Gateway -> Service A (Team 1, :11434, models={llama3,mistral})
+                     -> Service B (Team 2, :11435, models={codellama,deepseek})
+                     -> Service C (Public, :11436, models={all})
+                     -> Service D (Embed, :11437, models={nomic,embeddinggemma})
+
+================================================================================
+2. SINGLE-MACHINE MULTI-GPU ROUTING
+================================================================================
+
+Step 1: Create systemd template service for multiple instances
+----------------------------------------------------------------
+
+# Copy and modify the systemd service file
+sudo cp /etc/systemd/system/ollama.service /etc/systemd/system/ollama@.service
+
+# Edit /etc/systemd/system/ollama@.service:
+[Unit]
+Description=Ollama Service (%i)
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ollama serve
+User=ollama
+Group=ollama
+Restart=always
+RestartSec=3
+EnvironmentFile=/etc/default/ollama-%i
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+[Install]
+WantedBy=default.target
+
+Step 2: Create per-instance environment files
+----------------------------------------------
+
+# /etc/default/ollama-gpu0
+OLLAMA_HOST=127.0.0.1:11434
+CUDA_VISIBLE_DEVICES=0
+OLLAMA_KEEP_ALIVE=-1
+OLLAMA_LOAD_TIMEOUT=-5m
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_MAX_QUEUE=64
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_DEBUG=0
+
+# /etc/default/ollama-gpu1
+OLLAMA_HOST=127.0.0.1:11435
+CUDA_VISIBLE_DEVICES=1
+OLLAMA_KEEP_ALIVE=-1
+OLLAMA_LOAD_TIMEOUT=-5m
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_MAX_QUEUE=64
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_DEBUG=0
+
+# /etc/default/ollama-gpu2
+OLLAMA_HOST=127.0.0.1:11436
+CUDA_VISIBLE_DEVICES=2
+OLLAMA_KEEP_ALIVE=-1
+OLLAMA_LOAD_TIMEOUT=-5m
+OLLAMA_MAX_LOADED_MODELS=1
+OLLAMA_NUM_PARALLEL=2
+OLLAMA_MAX_QUEUE=64
+OLLAMA_FLASH_ATTENTION=1
+OLLAMA_DEBUG=0
+
+Step 3: Enable and start instances
+-------------------------------------
+sudo systemctl daemon-reload
+sudo systemctl disable --now ollama  # Disable default instance
+sudo systemctl enable --now ollama@gpu0
+sudo systemctl enable --now ollama@gpu1
+sudo systemctl enable --now ollama@gpu2
+
+Step 4: Preload models on each instance
+----------------------------------------
+OLLAMA_HOST=127.0.0.1:11434 ollama pull llama3.2
+OLLAMA_HOST=127.0.0.1:11435 ollama pull codellama
+OLLAMA_HOST=127.0.0.1:11436 ollama pull gemma3
+
+================================================================================
+3. MULTI-MACHINE CLUSTER ROUTING
+================================================================================
+
+Prerequisites:
+- Multiple servers with Ollama installed
+- Network connectivity between servers
+- Same models pulled on each node
+
+Node Configuration (each node):
+-------------------------------
+# /etc/systemd/system/ollama.service.d/override.conf
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0:11434"
+Environment="OLLAMA_KEEP_ALIVE=24h"
+
+# Reload and restart
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+
+# Pull models on each node
+ollama pull llama3.2:3b
+ollama pull codellama:7b
+
+================================================================================
+4. MODEL-AWARE ROUTING
+================================================================================
+
+Use when different models serve different purposes and you want intelligent
+request routing based on model requirements.
+
+Option A: Path-Based Routing (Nginx)
+--------------------------------------
+# Route /api/chat to chat models, /api/code to code models
+
+location /api/chat/ {
+    proxy_pass http://chat_backend;
+}
+
+location /api/code/ {
+    proxy_pass http://code_backend;
+}
+
+location /api/vision/ {
+    proxy_pass http://vision_backend;
+}
+
+Option B: Header-Based Routing (Nginx)
+----------------------------------------
+# Route based on X-Model header
+
+map $http_x_model $backend_pool {
+    default         ollama_default;
+    "llama3"        ollama_chat;
+    "codellama"     ollama_code;
+    "gemma4"        ollama_vision;
+    "nomic"         ollama_embed;
+}
+
+location /api/ {
+    proxy_pass http://$backend_pool;
+}
+
+Option C: LiteLLM Model Router (Recommended)
+---------------------------------------------
+# LiteLLM provides built-in model-aware routing with fallbacks
+
+See Section 8 for full LiteLLM configuration.
+
+================================================================================
+5. SERVICE-BASED ROUTING (MULTI-TENANT)
+================================================================================
+
+Use when different teams/services need isolated model access with different
+SLAs, quotas, or model permissions.
+
+Architecture:
+-------------
+API Gateway (Nginx/Traefik)
+  |-- /service-a/* -> Ollama Instance A (dedicated GPU, limited models)
+  |-- /service-b/* -> Ollama Instance B (dedicated GPU, limited models)
+  |-- /public/*    -> Ollama Instance C (shared GPU, all models)
+  |-- /embed/*     -> Ollama Instance D (CPU-optimized, embed models only)
+
+Nginx Config:
+--------------
+upstream ollama_service_a {
+    server 127.0.0.1:11434;
+}
+
+upstream ollama_service_b {
+    server 127.0.0.1:11435;
+}
+
+upstream ollama_public {
+    least_conn;
+    server 127.0.0.1:11436;
+    server 127.0.0.1:11437;
+}
+
+upstream ollama_embed {
+    server 127.0.0.1:11438;
+}
+
+server {
+    listen 80;
+    server_name ollama-gateway.example.com;
+
+    location /service-a/ {
+        proxy_pass http://ollama_service_a/;
+        # Rate limit: 10 req/min per IP
+        limit_req zone=service_a burst=5 nodelay;
+    }
+
+    location /service-b/ {
+        proxy_pass http://ollama_service_b/;
+        limit_req zone=service_b burst=10 nodelay;
+    }
+
+    location /public/ {
+        proxy_pass http://ollama_public/;
+        limit_req zone=public burst=20 nodelay;
+    }
+
+    location /embed/ {
+        proxy_pass http://ollama_embed/;
+        # No rate limit for embeds - typically high volume
+    }
+}
+
+================================================================================
+6. NGINX CONFIGURATION TEMPLATES
+================================================================================
+
+Template A: Basic Load Balancer (2 backends)
+---------------------------------------------
+# /etc/nginx/sites-available/ollama
+
+upstream ollama_backends {
+    least_conn;
+    server 127.0.0.1:11434 max_fails=3 fail_timeout=30s;
+    server 127.0.0.1:11435 max_fails=3 fail_timeout=30s;
+    keepalive 64;
+}
+
+server {
+    listen 8080;
+    server_name localhost;
+
+    location / {
+        proxy_pass http://ollama_backends;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+
+        # Critical for streaming responses
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+
+        # WebSocket support (if needed)
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
+
+Template B: Production Load Balancer (4+ backends, SSL, health checks)
+------------------------------------------------------------------------
+# /etc/nginx/nginx.conf or sites-available/ollama-production
+
+upstream ollama_cluster {
+    zone ollama_zone 64k;
+    least_conn;
+
+    server 127.0.0.1:11434 weight=1 max_fails=3 fail_timeout=30s;
+    server 127.0.0.1:11435 weight=1 max_fails=3 fail_timeout=30s;
+    server 127.0.0.1:11436 weight=1 max_fails=3 fail_timeout=30s;
+    server 127.0.0.1:11437 weight=1 max_fails=3 fail_timeout=30s;
+
+    keepalive 128;
+    keepalive_timeout 60s;
+    keepalive_requests 1000;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ollama.example.com;
+
+    ssl_certificate /etc/ssl/certs/ollama.crt;
+    ssl_certificate_key /etc/ssl/private/ollama.key;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Rate limiting
+    limit_req_zone $binary_remote_addr zone=ollama:10m rate=10r/s;
+    limit_req zone=ollama burst=20 nodelay;
+
+    location / {
+        proxy_pass http://ollama_cluster;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 900s;
+        proxy_send_timeout 900s;
+
+        # Health check endpoint (requires nginx-plus or third-party module)
+        # health_check interval=5s fails=3 passes=2;
+    }
+
+    # Status page for monitoring
+    location /nginx_status {
+        stub_status on;
+        allow 127.0.0.1;
+        deny all;
+    }
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name ollama.example.com;
+    return 301 https://$server_name$request_uri;
+}
+
+Template C: Multi-Model Path-Based Router
+------------------------------------------
+upstream ollama_chat {
+    least_conn;
+    server 127.0.0.1:11434;
+    server 127.0.0.1:11435;
+}
+
+upstream ollama_code {
+    least_conn;
+    server 127.0.0.1:11436;
+}
+
+upstream ollama_vision {
+    server 127.0.0.1:11437;
+}
+
+upstream ollama_embed {
+    server 127.0.0.1:11438;
+}
+
+server {
+    listen 8080;
+
+    location /api/chat/ {
+        proxy_pass http://ollama_chat/api/chat/;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+    }
+
+    location /api/generate/ {
+        # Route to different backends based on model parameter
+        set $backend ollama_chat;
+        if ($request_body ~ "codellama") {
+            set $backend ollama_code;
+        }
+        if ($request_body ~ "gemma4") {
+            set $backend ollama_vision;
+        }
+        proxy_pass http://$backend/api/generate/;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+    }
+
+    location /api/embed/ {
+        proxy_pass http://ollama_embed/api/embed/;
+        proxy_http_version 1.1;
+        proxy_buffering off;
+    }
+}
+
+================================================================================
+7. HAPROXY CONFIGURATION TEMPLATES
+================================================================================
+
+Template A: Basic HAProxy Load Balancer
+----------------------------------------
+# /etc/haproxy/haproxy.cfg
+
+global
+    log /dev/log local0
+    maxconn 4096
+    user haproxy
+    group haproxy
+    daemon
+
+defaults
+    mode http
+    log global
+    option httplog
+    option dontlognull
+    option http-server-close
+    option forwardfor except 127.0.0.0/8
+    option redispatch
+    retries 3
+    timeout http-request 10s
+    timeout queue 1m
+    timeout connect 10s
+    timeout client 1m
+    timeout server 1m
+    timeout http-keep-alive 10s
+    timeout check 10s
+    maxconn 3000
+
+frontend ollama_frontend
+    bind *:8080
+    bind *:8443 ssl crt /etc/ssl/certs/ollama.pem
+    redirect scheme https if !{ ssl_fc }
+    default_backend ollama_backend
+
+backend ollama_backend
+    balance leastconn
+    option httpchk GET /api/tags
+    http-check expect status 200
+    server ollama1 127.0.0.1:11434 check inter 30s fall 3 rise 2
+    server ollama2 127.0.0.1:11435 check inter 30s fall 3 rise 2
+    server ollama3 127.0.0.1:11436 check inter 30s fall 3 rise 2
+
+listen stats
+    bind *:8404
+    stats enable
+    stats uri /stats
+    stats refresh 30s
+    stats admin if TRUE
+
+Template B: HAProxy with Advanced Health Checks
+------------------------------------------------
+backend ollama_backend
+    balance leastconn
+    option httpchk GET /api/tags
+    http-check expect status 200
+
+    # Advanced health check with custom script
+    server ollama1 127.0.0.1:11434 check inter 30s fall 3 rise 2 maxconn 100
+    server ollama2 127.0.0.1:11435 check inter 30s fall 3 rise 2 maxconn 100
+    server ollama3 127.0.0.1:11436 check inter 30s fall 3 rise 2 maxconn 100 backup
+
+    # Sticky sessions for streaming (optional)
+    cookie OLLAMA_SESSION insert indirect nocache
+
+================================================================================
+8. LITELLM PROXY CONFIGURATION
+================================================================================
+
+LiteLLM provides the most flexible model-aware routing with OpenAI-compatible API.
+
+Installation:
+-------------
+pip install 'litellm[proxy]'
+
+Configuration: litellm_config.yaml
+----------------------------------
+model_list:
+  # Chat models - load balanced across multiple instances
+  - model_name: gpt-oss
+    litellm_params:
+      model: ollama/gpt-oss:120b
+      api_base: "http://127.0.0.1:11434"
+    model_info:
+      mode: chat
+      timeout: 300
+
+  - model_name: gpt-oss
+    litellm_params:
+      model: ollama/gpt-oss:120b
+      api_base: "http://127.0.0.1:11435"
+    model_info:
+      mode: chat
+      timeout: 300
+
+  # Code models
+  - model_name: codellama
+    litellm_params:
+      model: ollama/codellama:70b
+      api_base: "http://127.0.0.1:11436"
+    model_info:
+      mode: chat
+      timeout: 600
+
+  # Vision models
+  - model_name: gemma4-vision
+    litellm_params:
+      model: ollama/gemma4
+      api_base: "http://127.0.0.1:11437"
+    model_info:
+      mode: chat
+      timeout: 300
+
+  # Embedding models
+  - model_name: text-embedding
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: "http://127.0.0.1:11438"
+    model_info:
+      mode: embedding
+      timeout: 60
+
+# Router settings
+router_settings:
+  routing_strategy: least-busy  # least-busy, simple-shuffle, latency-based
+  timeout: 300
+
+# General settings
+general_settings:
+  master_key: sk-your-master-key
+  proxy_batch_write_timeout: 30
+
+# Rate limiting
+rate_limit_settings:
+  - model: gpt-oss
+    rpm: 60  # requests per minute
+    tpm: 100000  # tokens per minute
+  - model: codellama
+    rpm: 30
+    tpm: 50000
+
+Start LiteLLM:
+--------------
+litellm --config litellm_config.yaml --host 0.0.0.0 --port 8080
+
+Usage:
+------
+# OpenAI-compatible API
+curl http://localhost:8080/v1/chat/completions   -H "Authorization: Bearer sk-your-master-key"   -d '{
+    "model": "gpt-oss",
+    "messages": [{"role": "user", "content": "Hello"}]
+  }'
+
+# Embeddings
+curl http://localhost:8080/v1/embeddings   -H "Authorization: Bearer sk-your-master-key"   -d '{
+    "model": "text-embedding",
+    "input": "Hello world"
+  }'
+
+================================================================================
+9. CUSTOM FASTAPI ROUTER (SEMANTIC ROUTING)
+================================================================================
+
+For intelligent task-based routing using a small router model.
+
+Requirements:
+-------------
+pip install fastapi uvicorn httpx pydantic
+
+router.py:
+----------
+import os
+import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import Literal, Optional
+import json
+
+app = FastAPI(title="Ollama Model Router")
+
+# Model routing map
+MODEL_MAP = {
+    "code": {
+        "models": ["codellama:70b", "qwen3-coder", "devstral:24b"],
+        "backends": ["http://127.0.0.1:11436", "http://127.0.0.1:11437"],
+        "default": "codellama:70b"
+    },
+    "chat": {
+        "models": ["llama3.2", "qwen3.5", "mistral"],
+        "backends": ["http://127.0.0.1:11434", "http://127.0.0.1:11435"],
+        "default": "llama3.2"
+    },
+    "vision": {
+        "models": ["gemma4", "llava"],
+        "backends": ["http://127.0.0.1:11438"],
+        "default": "gemma4"
+    },
+    "embed": {
+        "models": ["nomic-embed-text", "all-minilm"],
+        "backends": ["http://127.0.0.1:11439"],
+        "default": "nomic-embed-text"
+    },
+    "summarize": {
+        "models": ["mistral", "llama3.2"],
+        "backends": ["http://127.0.0.1:11434"],
+        "default": "mistral"
+    }
+}
+
+# Router model for semantic classification
+ROUTER_MODEL = "qwen2.5:3b"
+ROUTER_URL = "http://127.0.0.1:11440"
+
+class InferenceRequest(BaseModel):
+    prompt: str = Field(..., max_length=32768)
+    task: Optional[Literal["code", "chat", "vision", "embed", "summarize"]] = None
+    stream: bool = False
+    model: Optional[str] = None
+
+async def classify_task(prompt: str) -> str:
+    """Use router model to classify task type."""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(f"{ROUTER_URL}/api/generate", json={
+            "model": ROUTER_MODEL,
+            "prompt": f"Classify this task as one of: code, chat, vision, embed, summarize.\n\nPrompt: {prompt}\n\nTask:",
+            "stream": False,
+            "options": {"temperature": 0.1, "num_predict": 10}
+        })
+        resp.raise_for_status()
+        result = resp.json()
+        classification = result["response"].strip().lower()
+        # Validate classification
+        for task in MODEL_MAP.keys():
+            if task in classification:
+                return task
+        return "chat"  # Default fallback
+
+async def route_to_backend(task: str, model: Optional[str] = None):
+    """Select appropriate backend for task."""
+    config = MODEL_MAP.get(task, MODEL_MAP["chat"])
+
+    # Use specified model or default
+    target_model = model or config["default"]
+
+    # Simple round-robin or least-connections could be implemented here
+    # For now, use first available backend
+    backend = config["backends"][0]
+
+    return backend, target_model
+
+@app.post("/api/generate")
+async def generate(req: InferenceRequest):
+    # Classify task if not specified
+    task = req.task or await classify_task(req.prompt)
+
+    # Route to appropriate backend
+    backend, model = await route_to_backend(task, req.model)
+
+    # Forward request to backend
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            resp = await client.post(f"{backend}/api/generate", json={
+                "model": model,
+                "prompt": req.prompt,
+                "stream": req.stream
+            })
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Backend error: {e.response.status_code}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Backend unreachable: {type(e).__name__}")
+
+@app.post("/api/chat")
+async def chat(req: InferenceRequest):
+    task = req.task or await classify_task(req.prompt)
+    backend, model = await route_to_backend(task, req.model)
+
+    try:
+        async with httpx.AsyncClient(timeout=300.0) as client:
+            resp = await client.post(f"{backend}/api/chat", json={
+                "model": model,
+                "messages": [{"role": "user", "content": req.prompt}],
+                "stream": req.stream
+            })
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=502, detail=f"Backend error: {e.response.status_code}")
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Backend unreachable: {type(e).__name__}")
+
+@app.get("/health")
+async def health():
+    """Health check endpoint."""
+    return {"status": "healthy", "router": ROUTER_MODEL}
+
+# Run: uvicorn router:app --host 0.0.0.0 --port 8000
+
+================================================================================
+10. DOCKER COMPOSE MULTI-SERVICE SETUP
+================================================================================
+
+docker-compose.yml:
+-------------------
+version: '3.8'
+
+services:
+  ollama-gpu0:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu0
+    runtime: nvidia
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - CUDA_VISIBLE_DEVICES=0
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_QUEUE=64
+    volumes:
+      - ollama-models:/root/.ollama/models
+    ports:
+      - "11434:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama-gpu1:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu1
+    runtime: nvidia
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - CUDA_VISIBLE_DEVICES=1
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_QUEUE=64
+    volumes:
+      - ollama-models:/root/.ollama/models
+    ports:
+      - "11435:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  ollama-gpu2:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu2
+    runtime: nvidia
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+      - CUDA_VISIBLE_DEVICES=2
+      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_QUEUE=64
+    volumes:
+      - ollama-models:/root/.ollama/models
+    ports:
+      - "11436:11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  nginx:
+    image: nginx:alpine
+    container_name: ollama-nginx
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - ollama-gpu0
+      - ollama-gpu1
+      - ollama-gpu2
+
+volumes:
+  ollama-models:
+    driver: local
+
+# Start: docker-compose up -d
+
+================================================================================
+11. KUBERNETES DEPLOYMENT
+================================================================================
+
+Namespace and ConfigMap:
+--------------------------
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ollama
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ollama-config
+  namespace: ollama
+data:
+  OLLAMA_HOST: "0.0.0.0:11434"
+  OLLAMA_KEEP_ALIVE: "-1"
+  OLLAMA_NUM_PARALLEL: "2"
+  OLLAMA_MAX_QUEUE: "64"
+
+GPU Node Deployment (DaemonSet per GPU):
+------------------------------------------
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: ollama-gpu
+  namespace: ollama
+spec:
+  selector:
+    matchLabels:
+      app: ollama-gpu
+  template:
+    metadata:
+      labels:
+        app: ollama-gpu
+    spec:
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      containers:
+      - name: ollama
+        image: ollama/ollama:latest
+        ports:
+        - containerPort: 11434
+        envFrom:
+        - configMapRef:
+            name: ollama-config
+        env:
+        - name: CUDA_VISIBLE_DEVICES
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+        volumeMounts:
+        - name: models
+          mountPath: /root/.ollama/models
+      volumes:
+      - name: models
+        persistentVolumeClaim:
+          claimName: ollama-models-pvc
+
+Service and Ingress:
+----------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama-service
+  namespace: ollama
+spec:
+  selector:
+    app: ollama-gpu
+  ports:
+  - port: 11434
+    targetPort: 11434
+  type: ClusterIP
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ollama-ingress
+  namespace: ollama
+  annotations:
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$request_id"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+spec:
+  rules:
+  - host: ollama.cluster.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ollama-service
+            port:
+              number: 11434
+
+================================================================================
+12. ENVIRONMENT VARIABLE REFERENCE
+================================================================================
+
+Per-Instance Variables:
+-----------------------
+| Variable | Description | Example |
+|----------|-------------|---------|
+| OLLAMA_HOST | Bind address and port | 127.0.0.1:11434 |
+| CUDA_VISIBLE_DEVICES | GPU device index | 0, 1, 2 |
+| ROCR_VISIBLE_DEVICES | AMD GPU device index | 0, 1 |
+| OLLAMA_MODELS | Shared model storage | /shared/ollama/models |
+| OLLAMA_KEEP_ALIVE | Model retention time | -1 (forever), 0 (immediate), 5m |
+| OLLAMA_NUM_PARALLEL | Concurrent requests per model | 2, 4 |
+| OLLAMA_MAX_QUEUE | Max queued requests | 64, 512 |
+| OLLAMA_MAX_LOADED_MODELS | Max concurrent models | 1, 3 |
+| OLLAMA_FLASH_ATTENTION | Enable Flash Attention | 1 |
+| OLLAMA_CONTEXT_LENGTH | Default context window | 65536 |
+| OLLAMA_KV_CACHE_TYPE | KV cache quantization | f16, q8_0, q4_0 |
+| OLLAMA_LOAD_TIMEOUT | Model load timeout | -5m |
+| OLLAMA_DEBUG | Debug logging | 0, 1 |
+
+================================================================================
+13. MONITORING & HEALTH CHECKS
+================================================================================
+
+Health Check Endpoint:
+----------------------
+# Ollama built-in health check
+GET /api/tags -> HTTP 200 with model list
+
+Nginx Health Check:
+-------------------
+location /health {
+    proxy_pass http://ollama_backends/api/tags;
+    proxy_http_version 1.1;
+    health_check interval=5s fails=3 passes=2;
+}
+
+Custom Health Monitor Script:
+-------------------------------
+#!/bin/bash
+# ollama-health-check.sh
+
+INSTANCES=("127.0.0.1:11434" "127.0.0.1:11435" "127.0.0.1:11436")
+LOG_FILE="/var/log/ollama-health.log"
+
+for instance in "${INSTANCES[@]}"; do
+    if curl -s -o /dev/null -w "%{http_code}" "http://$instance/api/tags" | grep -q "200"; then
+        echo "$(date): $instance - HEALTHY" >> $LOG_FILE
+    else
+        echo "$(date): $instance - UNHEALTHY" >> $LOG_FILE
+        # Restart logic here
+    fi
+done
+
+Prometheus Metrics (if using custom exporter):
+------------------------------------------------
+# ollama_exporter.py - simple Prometheus exporter
+from prometheus_client import start_http_server, Gauge
+import requests
+import time
+
+ollama_up = Gauge('ollama_up', 'Ollama instance health', ['instance'])
+ollama_models_loaded = Gauge('ollama_models_loaded', 'Models loaded', ['instance'])
+
+INSTANCES = ['http://127.0.0.1:11434', 'http://127.0.0.1:11435', 'http://127.0.0.1:11436']
+
+def collect_metrics():
+    for instance in INSTANCES:
+        try:
+            resp = requests.get(f"{instance}/api/tags", timeout=5)
+            if resp.status_code == 200:
+                ollama_up.labels(instance=instance).set(1)
+                models = len(resp.json().get('models', []))
+                ollama_models_loaded.labels(instance=instance).set(models)
+            else:
+                ollama_up.labels(instance=instance).set(0)
+        except:
+            ollama_up.labels(instance=instance).set(0)
+
+if __name__ == '__main__':
+    start_http_server(9090)
+    while True:
+        collect_metrics()
+        time.sleep(15)
+
+================================================================================
+14. PERFORMANCE TUNING
+================================================================================
+
+Load Balancing Strategy Selection:
+-----------------------------------
+| Strategy | Use Case | Ollama Suitability |
+|----------|----------|-------------------|
+| round_robin | Equal distribution, predictable | Poor (uneven request durations) |
+| least_conn | Dynamic, request-duration aware | Excellent (recommended) |
+| ip_hash | Session persistence | Good (for stateful chat) |
+| weighted | Heterogeneous hardware | Good (for mixed GPU sizes) |
+
+VRAM Optimization:
+-------------------
+# For 8GB VRAM per GPU
+PARAMETER num_gpu 30
+PARAMETER low_vram true
+PARAMETER num_ctx 2048
+PARAMETER num_batch 256
+
+# For 24GB VRAM per GPU
+PARAMETER num_ctx 8192
+PARAMETER num_batch 512
+OLLAMA_NUM_PARALLEL=4
+
+# For 48GB+ VRAM per GPU
+PARAMETER num_ctx 65536
+PARAMETER num_batch 1024
+OLLAMA_NUM_PARALLEL=8
+
+Throughput Benchmarks (4x RTX 4090):
+--------------------------------------
+- Single instance: ~4-8 concurrent users before queue depth spikes
+- 4-instance load balancing: ~80% throughput increase
+- Response latency: ~50% reduction during peak hours
+- 100 requests: single instance ~10 min, 4-instance ~5+ min
+
+Context Length Recommendations:
+--------------------------------
+| Use Case | Minimum | Recommended |
+|----------|---------|-------------|
+| Chat | 4k | 8k |
+| Code completion | 8k | 16k |
+| Code review | 16k | 32k |
+| Agent/RAG | 32k | 64k |
+| Web search agent | 32k | 64k+ |
+| Document analysis | 64k | 128k |
+
+================================================================================
+COMPLETE CONFIGURATION CHECKLIST
+================================================================================
+
+[ ] Determine architecture pattern (B, C, D, or E)
+[ ] Calculate VRAM budget per model instance
+[ ] Choose load balancing strategy (least_conn recommended)
+[ ] Configure systemd template services (Linux)
+[ ] Set per-instance environment variables
+[ ] Configure shared model storage (if multi-instance same machine)
+[ ] Set up reverse proxy (Nginx or HAProxy)
+[ ] Configure health checks
+[ ] Set up SSL/TLS termination
+[ ] Configure rate limiting per service
+[ ] Set up monitoring (Prometheus/Grafana)
+[ ] Test failover behavior
+[ ] Document model-to-backend mappings
+[ ] Set up log aggregation
+[ ] Configure backup/restore procedures
+
+================================================================================

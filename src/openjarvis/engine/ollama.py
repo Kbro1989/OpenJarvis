@@ -10,7 +10,7 @@ from typing import Any, Dict, List
 
 import httpx
 
-from openjarvis.core.registry import EngineRegistry
+from openjarvis.core.registry import EngineRegistry, ToolRegistry
 from openjarvis.core.types import Message
 from openjarvis.engine._base import (
     EngineConnectionError,
@@ -19,6 +19,7 @@ from openjarvis.engine._base import (
     messages_to_dicts,
 )
 from openjarvis.engine._stubs import StreamChunk
+from openjarvis.tools._stubs import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -101,6 +102,43 @@ class OllamaEngine(InferenceEngine):
         self._client = httpx.Client(base_url=self._host, timeout=timeout)
         # Last stream usage — captured from Ollama's final chunk
         self._last_stream_usage: Dict[str, int] = {}
+        self._manifest = None
+
+    def _get_manifest(self) -> Dict[str, Any]:
+        if self._manifest is None:
+            try:
+                from openjarvis.tools.actionable_manifest import (
+                    build_actionable_manifest,
+                    resolve_action,
+                )
+
+                self._manifest = build_actionable_manifest()
+            except Exception:
+                self._manifest = {}
+        return self._manifest
+
+    def select_model(self, model: str | None) -> str:
+        if model and model.strip():
+            return model.strip()
+        models = self.list_models()
+        if models:
+            return models[0]
+        return model or ""
+
+    def _openai_tools_from_registry(self) -> List[Dict[str, Any]]:
+        tools: List[Dict[str, Any]] = []
+        for _key, entry in ToolRegistry.items():
+            try:
+                tool = entry() if callable(entry) else entry
+            except Exception:
+                continue
+            if not isinstance(tool, BaseTool):
+                continue
+            try:
+                tools.append(tool.to_openai_function())
+            except Exception:
+                continue
+        return tools
 
     def generate(
         self,
@@ -111,6 +149,7 @@ class OllamaEngine(InferenceEngine):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        model = self.select_model(model)
         msg_dicts = messages_to_dicts(messages)
         # Ollama expects tool_call arguments as dicts, not JSON strings
         for md in msg_dicts:
@@ -139,8 +178,11 @@ class OllamaEngine(InferenceEngine):
             payload["think"] = False
         elif kwargs["think"] is not None:
             payload["think"] = kwargs["think"]
-        # Pass tools if provided
+        # Use the normalized Jarvis actionable manifest as the tool source
+        # when the caller did not already pass an explicit OpenAI-style tool list.
         tools = kwargs.get("tools")
+        if tools is None:
+            tools = self._openai_tools_from_registry()
         if tools:
             payload["tools"] = tools
 

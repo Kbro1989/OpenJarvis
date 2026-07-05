@@ -111,13 +111,15 @@ class InferenceEngine(ABC):
             yield StreamChunk(content=token)
         yield StreamChunk(finish_reason="stop")
 
-    @abstractmethod
     def list_models(self) -> List[str]:
         """Return identifiers of models available on this engine."""
 
-    @abstractmethod
+        return []
+
     def health(self) -> bool:
         """Return ``True`` when the engine is reachable and healthy."""
+
+        return True
 
     def can_serve(self, model: str) -> bool:
         """Return ``True`` if this engine can serve *model*.

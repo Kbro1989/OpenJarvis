@@ -148,6 +148,58 @@ class SystemPromptBuilder:
                 )
             )
         sections.extend(self._persona_prompt_sections())
+        # King Wen emotional-state section, if a provider is attached.
+        kingwen_gate = False
+        if getattr(self, "_emotion_provider", None) is not None:
+            try:
+                payload = self._emotion_provider.consult(
+                    text=getattr(self, "_emotion_text", "") or "",
+                    session_id=getattr(self, "_emotion_session_id", "openjarvis"),
+                )
+                section_text = self._emotion_provider.format_prompt_section(payload)
+                sections.append(
+                    PromptSection(
+                        name="emotional_state",
+                        content=section_text,
+                        source="kingwen-emotion",
+                        cache_segment="frozen_prefix",
+                    )
+                )
+                kingwen_gate = self._emotion_provider._ternary_to_bool(
+                    payload.get("action") or payload.get("category") or payload.get("hexagram_id")
+                )
+                # Apply emotional voice preset into prompt/speech path.
+                tts_backend = getattr(self, "_tts_backend", None) or "cartesia"
+                voice_preset = self._emotion_provider.voice_preset(
+                    tts_backend=tts_backend,
+                    voice_weight=float(payload.get("emotional_deltas", {}).get("voiceWeight", 0.0)),
+                )
+                try:
+                    object.__setattr__(self, "_kingwen_voice_preset", voice_preset)
+                except TypeError:
+                    setattr(self, "_kingwen_voice_preset", voice_preset)
+                try:
+                    object.__setattr__(self, "_kingwen_voice_section", self._emotion_provider.format_voice_section(voice_preset))
+                except TypeError:
+                    setattr(self, "_kingwen_voice_section", self._emotion_provider.format_voice_section(voice_preset))
+            except Exception as exc:
+                sections.append(
+                    PromptSection(
+                        name="emotional_state",
+                        content=f"## Emotional State\n\n_emotion provider unavailable: {type(exc).__name__}_",
+                        source="kingwen-emotion-error",
+                        cache_segment="frozen_prefix",
+                    )
+                )
+                kingwen_gate = False
+                try:
+                    object.__setattr__(self, "_kingwen_voice_preset", None)
+                except TypeError:
+                    setattr(self, "_kingwen_voice_preset", None)
+        try:
+            object.__setattr__(self, "_kingwen_gate", kingwen_gate)
+        except TypeError:
+            setattr(self, "_kingwen_gate", kingwen_gate)
         # XML skill catalog (preferred over legacy markdown list)
         if self._skill_catalog_xml:
             sections.append(
