@@ -42,6 +42,7 @@ class StepType(str, Enum):
     GENERATE = "generate"
     TOOL_CALL = "tool_call"
     RESPOND = "respond"
+    KINGWEN_VOICE = "kingwen_voice"
 
 
 # ---------------------------------------------------------------------------

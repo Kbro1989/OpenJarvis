@@ -227,6 +227,10 @@ def chat(
         # Handle slash commands
         cmd = user_input.lower()
         if cmd in ("/quit", "/exit", "/q"):
+            from openjarvis.cli._oracle_speak import shutdown as _oracle_shutdown
+            from openjarvis.cli._oracle_dashboard import render as _oracle_render
+
+            _oracle_shutdown()
             console.print("[dim]Goodbye![/dim]")
             break
         elif cmd == "/clear":
@@ -234,6 +238,44 @@ def chat(
             if system_prompt:
                 history.append(Message(role=Role.SYSTEM, content=system_prompt))
             console.print("[dim]History cleared.[/dim]")
+            continue
+        elif cmd.startswith("/oracle "):
+            query = user_input[len("/oracle "):].strip()
+            if not query:
+                console.print("[yellow]Usage: /oracle <your question>[/yellow]")
+                continue
+            from openjarvis.cli._oracle_speak import oracle_speak_async
+
+            def _done(fut):
+                try:
+                    result = fut.result()
+                except Exception as exc:
+                    console.print(f"\n[red]Oracle voice failed: {exc}[/red]\n")
+                    return
+                console.print(_oracle_render(result))
+
+            future = oracle_speak_async(query, on_done=_done)
+            console.print("[dim]Oracle is consulting... voice will appear when ready.[/dim]")
+            continue
+        elif cmd.startswith("/counsel "):
+            query = user_input[len("/counsel "):].strip()
+            if not query:
+                console.print("[yellow]Usage: /counsel <your question>[/yellow]")
+                continue
+            from openjarvis.cli._oracle_speak import oracle_speak_async
+
+            counsel_prefix = "Counsel me through past, present, and future truth: "
+
+            def _done(fut):
+                try:
+                    result = fut.result()
+                except Exception as exc:
+                    console.print(f"\n[red]Oracle counsel failed: {exc}[/red]\n")
+                    return
+                console.print(_oracle_render(result))
+
+            future = oracle_speak_async(counsel_prefix + query, on_done=_done)
+            console.print("[dim]Oracle is counseling... voice will appear when ready.[/dim]")
             continue
         elif cmd == "/model":
             console.print(
@@ -247,6 +289,8 @@ def chat(
                 "  /clear        — clear conversation\n"
                 "  /model        — show model info\n"
                 "  /history      — show conversation\n"
+                "  /oracle <q>   — consult King Wen, synthesize voice to file\n"
+                "  /counsel <q>  — same as /oracle with PPF framing\n"
                 "  /help         — this message"
             )
             continue

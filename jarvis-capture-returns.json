@@ -1,0 +1,140 @@
+{
+  "consult": {
+    "status_code": 200,
+    "url": "https://kingwen-oracle.kristain33rs.workers.dev/consult",
+    "headers": {
+      "date": "Mon, 06 Jul 2026 01:45:10 GMT",
+      "content-type": "application/json",
+      "content-length": "2398",
+      "connection": "keep-alive",
+      "report-to": "{\"group\":\"cf-nel\",\"max_age\":604800,\"endpoints\":[{\"url\":\"https://a.nel.cloudflare.com/report/v4?s=hJKScNUyaxIt4Cfw9Kr0HATDeqq%2BBehK5Z6QewNQiD13YeYsgyh0Ja4Hw1HlCKpPwVO9pDybj2cMVB%2Bs9yCauiINaSCAeKqdmgN8K0iA6QG3c3WzvuVvpXgG9iykv%2BFjP%2FjBLx%2FTOnEvV0l8Z4QxeJKlf8ez9O0XV34%3D\"}]}",
+      "nel": "{\"report_to\":\"cf-nel\",\"success_fraction\":0.0,\"max_age\":604800}",
+      "server": "cloudflare",
+      "cf-ray": "a16aedb2d9ead80b-DFW",
+      "alt-svc": "h3=\":443\"; ma=86400"
+    },
+    "body": {
+      "hexagram_id": 17,
+      "hexagram_name": "Following",
+      "hexagram_unicode": "\u4dd0",
+      "binary": "100110",
+      "upper_trigram": "Zhen",
+      "lower_trigram": "Dui",
+      "category": "transformer",
+      "action": "YIELD",
+      "hexagram_sequence": [
+        "Following"
+      ],
+      "phase_bits": 0,
+      "phase_temporal": "past",
+      "phase_description": "Present voice of Following: \u96a8 su\u00ed \u2014 Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow.",
+      "ternary_str": "",
+      "ternary_lines_top_to_bottom": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "phase_changing_lines": [],
+      "reaction_frame": "",
+      "emotional_deltas": {
+        "chaos": 0.3,
+        "whimsy": 0.5,
+        "darkTone": 0.15,
+        "coherence": 0.7,
+        "voiceWeight": 0.78
+      },
+      "reflections": {
+        "past": "Past echo from Following: Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow revisited.",
+        "present": "Present voice of Following: \u96a8 su\u00ed \u2014 Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow.",
+        "future": "Future signal from Following: next move leans yield within transformer."
+      },
+      "trainingNotes": "Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow.",
+      "unified_weave": "Past echo from Following: Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow revisited. \u2192 Present voice of Following: \u96a8 su\u00ed \u2014 Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow. \u2192 Future signal from Following: next move leans yield within transformer.",
+      "emotional_tongue": {
+        "hexagram_id": 17,
+        "voice_weight": 0.78,
+        "coherence": 0.7,
+        "chaos": 0.3,
+        "whimsy": 0.5,
+        "dark_tone": 0.15,
+        "porosity": 0.35,
+        "training_weight_vectors": {
+          "voiceWeight": 0.78,
+          "coherence": 0.7,
+          "chaos": 0.3,
+          "whimsy": 0.5,
+          "darkTone": 0.15
+        },
+        "direction": "adapt",
+        "states": {
+          "past": "",
+          "present": "",
+          "future": ""
+        },
+        "texts": {
+          "past": "Past echo from Following: Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow revisited.",
+          "present": "Present voice of Following: \u96a8 su\u00ed \u2014 Lake over thunder \u2014 following. Following is adaptation, riding the wave, knowing when to lead and when to follow.",
+          "future": "Future signal from Following: next move leans yield within transformer."
+        }
+      },
+      "save_string": "17|0.3500|0.300000|0.500000|0.150000|0.700000|0.780000"
+    },
+    "required_fields": [
+      "hexagram_id",
+      "hexagram_name",
+      "hexagram_unicode",
+      "binary",
+      "upper_trigram",
+      "lower_trigram",
+      "category",
+      "action",
+      "hexagram_sequence",
+      "phase_bits",
+      "phase_temporal",
+      "phase_description",
+      "ternary_str",
+      "ternary_lines_top_to_bottom",
+      "phase_changing_lines",
+      "reaction_frame",
+      "emotional_deltas",
+      "reflections",
+      "trainingNotes",
+      "unified_weave",
+      "emotional_tongue",
+      "save_string"
+    ]
+  },
+  "tts_requirements": {
+    "endpoint": "https://kingwen-oracle.kristain33rs.workers.dev/tts",
+    "method": "POST",
+    "request_fields": [
+      "text",
+      "vector",
+      "porosity",
+      "trajectory",
+      "agree_temporal",
+      "session_id",
+      "speaker"
+    ],
+    "response_headers_required": [
+      "content-type",
+      "x-kingwen-session",
+      "x-kingwen-compliance",
+      "x-kingwen-violations",
+      "x-kingwen-vector",
+      "x-kingwen-porosity",
+      "x-kingwen-trajectory",
+      "x-kingwen-temporal"
+    ],
+    "vector_format": "voiceWeight|coherence|chaos|whimsy|darkTone, 6 decimal pipe",
+    "compliance_contract": {
+      "compliant": "all fields in range",
+      "reject": "at least one field out of range",
+      "observed_behavior": "synthesis still returns audio/mpeg on reject",
+      "jarvis_required_rule": "edge must gate playback on X-Kingwen-Compliance=compliant before DSP"
+    }
+  }
+}

@@ -80,6 +80,7 @@ class EventType(str, Enum):
     OPTIMIZE_TRIAL_END = "optimize_trial_end"
     OPTIMIZE_RUN_END = "optimize_run_end"
     FEEDBACK_RECEIVED = "feedback_received"
+    KINGWEN_VOICE_COMPLETE = "kingwen_voice_complete"
 
 
 @dataclass(slots=True)

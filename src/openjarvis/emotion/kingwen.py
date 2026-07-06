@@ -374,6 +374,7 @@ class KingWenEmotionProvider:
                 "future": reflections.get("future", ""),
             },
             "trainingNotes": weights.get("trainingNotes", ""),
+            "unified_weave": self._build_unified_weave(reflections),
             "emotional_tongue": collapse.get("emotional_tongue") or {},
             "save_string": self.encode_tongue(collapse.get("emotional_tongue") or {}),
         }
@@ -384,6 +385,16 @@ class KingWenEmotionProvider:
                 "unicode": secondary_unicode,
             }
         return payload
+
+    @staticmethod
+    def _build_unified_weave(reflections: Dict[str, Any]) -> str:
+        """Merge past/present/future reflections into a single oracle utterance."""
+        past = str((reflections or {}).get("past", "")).strip()
+        present = str((reflections or {}).get("present", "")).strip()
+        future = str((reflections or {}).get("future", "")).strip()
+        if not past and not present and not future:
+            return ""
+        return f"{past} → {present} → {future}"
 
     def encode_tongue(self, tongue: Dict[str, Any]) -> str:
         """Encode a captured emotional-tongue save string.

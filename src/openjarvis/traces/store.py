@@ -303,5 +303,13 @@ class TraceStore:
     def _fetchall(self, sql: str = "SELECT * FROM traces") -> list:
         return self._conn.execute(sql).fetchall()
 
+    def execute(self, sql: str, params: tuple = ()) -> None:
+        self._conn.execute(sql, params)
+        self._conn.commit()
+
+    def fetchone(self, sql: str, params: tuple = ()) -> Any:
+        row = self._conn.execute(sql, params).fetchone()
+        return row
+
 
 __all__ = ["TraceStore"]

@@ -1,0 +1,66 @@
+{
+  "compliance_workspace": {
+    "source_of_truth": {
+      "path": "C:/Users/krist/Desktop/KING-WEN-I-CHING-IMMUTABLE-TABLES/kingwen_ternary_tables_complete.py",
+      "readonly": true,
+      "keys": ["HEXAGRAM_INJECTION_SITE", "EMOTIONAL_WEIGHTS", "YAO_VOCABULARY"]
+    },
+    "programs": [
+      {
+        "id": "kingwen-worker",
+        "name": "King Wen Cloudflare Worker",
+        "path": "C:/Users/krist/Desktop/kingwen-oracle-worker/kingwen-oracle",
+        "entry": "src/index.ts",
+        "role": "authoritative consult + tts source",
+        "inject_dependency": "HEXAGRAM_INJECTION_SITE",
+        "enforcement_points": ["/consult", "/tts"],
+        "current_inject_site": "src/data/inject-site.json",
+        "inject_site_complete": false,
+        "status": "partial"
+      },
+      {
+        "id": "openjarvis",
+        "name": "OpenJarvis",
+        "path": "C:/Users/krist/Desktop/OpenJarvis",
+        "entry": "src/openjarvis/cli/_oracle_speak.py",
+        "role": "edge client + dsp modulation",
+        "inject_dependency": "HEXAGRAM_INJECTION_SITE",
+        "enforcement_points": ["audio_dsp.py", "chat_cmd.py", "_oracle_dashboard.py"],
+        "current_inject_site": "none — reads from worker headers",
+        "inject_site_complete": false,
+        "status": "in_progress"
+      },
+      {
+        "id": "pog2",
+        "name": "POG2",
+        "path": "C:/Users/krist/.gemini/antigravity/scratch/POG2",
+        "entry": "src/limbs/spatial/OracleEmotionAdapter.ts",
+        "role": "render substrate contract",
+        "inject_dependency": "HEXAGRAM_INJECTION_SITE",
+        "enforcement_points": ["AvatarRenderLimb.ts", "GhostSplatLimb.ts"],
+        "current_inject_site": "oracle-avatar-payload-spec.md",
+        "inject_site_complete": false,
+        "status": "spec_only"
+      },
+      {
+        "id": "oracle-worker",
+        "name": "Oracle Cloudflare Worker",
+        "path": "C:/Users/krist/Desktop/oracle",
+        "entry": "src/index.ts",
+        "role": "separate past project — not king wen",
+        "inject_dependency": "none — separate project",
+        "enforcement_points": [],
+        "current_inject_site": "n/a",
+        "inject_site_complete": false,
+        "status": "excluded"
+      }
+    ],
+    "inject_site_rules": {
+      "must_match": "HEXAGRAM_INJECTION_SITE keys 1-64",
+      "fields_per_entry": ["primary_pool", "secondary_pool", "porosity", "reason"],
+      "vector_axes": ["voiceWeight", "coherence", "chaos", "whimsy", "darkTone"],
+      "additional": ["porosity", "trajectory", "agree_temporal", "session_id"],
+      "compliance_states": ["compliant", "drift", "reject"]
+    }
+  }
+}

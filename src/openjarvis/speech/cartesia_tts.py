@@ -1,7 +1,8 @@
 """Cartesia text-to-speech backend.
 
-Uses the Cartesia REST API for high-quality, low-latency voice synthesis.
-Requires CARTESIA_API_KEY environment variable or config.
+Uses the Cartesia REST API. The legacy synthesize() path is preserved for
+callers that do not carry emotional state. Oracle callers should use
+synthesize_with_emotion() on CartesiaAdapter directly.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import httpx
 
 from openjarvis.core.registry import TTSRegistry
 from openjarvis.speech.tts import TTSBackend, TTSResult
+from openjarvis.speech.cartesia_adapter import CartesiaAdapter
 
 _CARTESIA_API_BASE = "https://api.cartesia.ai"
 
@@ -26,7 +28,7 @@ def _cartesia_synthesize(
     speed: float = 1.0,
     language: str = "en",
 ) -> bytes:
-    """Call the Cartesia TTS API and return raw audio bytes."""
+    """Legacy direct synthesis shim. Does not carry emotional state."""
     resp = httpx.post(
         f"{_CARTESIA_API_BASE}/tts/bytes",
         headers={
@@ -53,16 +55,16 @@ def _cartesia_synthesize(
 
 @TTSRegistry.register("cartesia")
 class CartesiaTTSBackend(TTSBackend):
-    """Cartesia TTS backend — fast, high-quality synthesis."""
-
     backend_id = "cartesia"
 
     def __init__(
-        self, *, api_key: str = "", model: str = "sonic", language: str = "en"
+        self, *, api_key: str = "", model: str = "sonic-3.5", language: str = "en"
     ) -> None:
         self._api_key = api_key or os.environ.get("CARTESIA_API_KEY", "")
         self._model = model
         self._language = language or os.environ.get("CARTESIA_LANGUAGE", "en")
+        self._adapter = CartesiaAdapter(self._api_key)
+        self._adapter.set_http_client(httpx)
 
     def synthesize(
         self,
@@ -73,10 +75,13 @@ class CartesiaTTSBackend(TTSBackend):
         output_format: str = "mp3",
         language: str = "",
     ) -> TTSResult:
+        """
+        Legacy synthesis path for callers that do not carry emotional state.
+        Speed is passed through directly. Emotion is not applied.
+        """
         if not self._api_key:
             raise RuntimeError("CARTESIA_API_KEY not set")
 
-        # Default to "British Butler" voice — warm, authoritative, Jarvis-like
         if not voice_id:
             voice_id = "a0e99841-438c-4a64-b679-ae501e7d6091"
 
@@ -113,3 +118,7 @@ class CartesiaTTSBackend(TTSBackend):
 
     def health(self) -> bool:
         return bool(self._api_key)
+
+    def get_adapter(self) -> CartesiaAdapter:
+        """Expose the prosthetic adapter for oracle callers."""
+        return self._adapter

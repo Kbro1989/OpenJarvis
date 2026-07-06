@@ -1,0 +1,286 @@
+{
+  "generated_at": "2026-07-05T16:27:00Z",
+  "sequence_count": 7,
+  "session_id": "jarvis-avatar-1",
+  "canonical_tick_ms": 640.0,
+  "steps": [
+    {
+      "step_index": 1,
+      "timestamp_utc": "2026-07-05T16:26:28.584799+00:00",
+      "hexagram_id": 1,
+      "hexagram_name": "The Creative",
+      "unicode": "\u4E17",
+      "binary": "111111",
+      "upper_trigram": "Qian",
+      "lower_trigram": "Qian",
+      "category": "sovereign",
+      "action": "ASSERT",
+      "emotional_deltas": {
+        "chaos": 0.05,
+        "whimsy": 0.15,
+        "darkTone": 0.0,
+        "coherence": 0.98,
+        "voiceWeight": 0.95
+      },
+      "future_signal": "next move leans assert within sovereign.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Set deterministic sovereign startup mode: highest coherence, lowest chaos, direct voice weight. Use as generator commit rule: clear command voice, no hesitation.",
+      "hermes_mod_target": "engine/persona prelude and narrator mode"
+    },
+    {
+      "step_index": 2,
+      "timestamp_utc": "2026-07-05T16:26:28.607241+00:00",
+      "hexagram_id": 7,
+      "hexagram_name": "The Army",
+      "unicode": "\u4E18",
+      "binary": "000010",
+      "upper_trigram": "Kan",
+      "lower_trigram": "Kun",
+      "category": "sovereign",
+      "action": "ASSERT",
+      "emotional_deltas": {
+        "chaos": 0.08,
+        "whimsy": 0.08,
+        "darkTone": 0.25,
+        "coherence": 0.97,
+        "voiceWeight": 0.95
+      },
+      "future_signal": "next move leans assert within sovereign.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Engage hierarchical tool dispatch: ordered tool calls, obeying tool result sequencing, commander-level routing with exact single-announce behavior.",
+      "hermes_mod_target": "ToolExecutor/tool mediation layer"
+    },
+    {
+      "step_index": 3,
+      "timestamp_utc": "2026-07-05T16:26:28.646473+00:00",
+      "hexagram_id": 20,
+      "hexagram_name": "Contemplation",
+      "unicode": "\u4E93",
+      "binary": "000011",
+      "upper_trigram": "Xun",
+      "lower_trigram": "Kun",
+      "category": "boundary",
+      "action": "WAIT",
+      "emotional_deltas": {
+        "chaos": 0.2,
+        "whimsy": 0.15,
+        "darkTone": 0.2,
+        "coherence": 0.8,
+        "voiceWeight": 0.75
+      },
+      "future_signal": "next move leans wait within boundary.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Hold before tool call. Inspect prior responses and boundaries before acting. This is the human/assistant code review boundary—not a veto, a pause.",
+      "hermes_mod_target": "middleware or policy route between tool call and execution"
+    },
+    {
+      "step_index": 4,
+      "timestamp_utc": "2026-07-05T16:26:28.663296+00:00",
+      "hexagram_id": 52,
+      "hexagram_name": "Keeping Still",
+      "unicode": "\u4E93",
+      "binary": "001001",
+      "upper_trigram": "Gen",
+      "lower_trigram": "Gen",
+      "category": "boundary",
+      "action": "WAIT",
+      "emotional_deltas": {
+        "chaos": 0.1,
+        "whimsy": 0.05,
+        "darkTone": 0.2,
+        "coherence": 0.92,
+        "voiceWeight": 0.85
+      },
+      "future_signal": "next move leans wait within boundary.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Enforce exact canonical 640 ms heartbeat pause before next decision. The state machine must not race. Reduce Whimsy to 0.05, preserve high coherence at 0.92.",
+      "hermes_mod_target": "CanonicalClock/NodeTester heartbeat boundary"
+    },
+    {
+      "step_index": 5,
+      "timestamp_utc": "2026-07-05T16:26:28.690880+00:00",
+      "hexagram_id": 43,
+      "hexagram_name": "Breakthrough",
+      "unicode": "\u4E96",
+      "binary": "111110",
+      "upper_trigram": "Qian",
+      "lower_trigram": "Dui",
+      "category": "sovereign",
+      "action": "ASSERT",
+      "emotional_deltas": {
+        "chaos": 0.3,
+        "whimsy": 0.15,
+        "darkTone": 0.2,
+        "coherence": 0.88,
+        "voiceWeight": 0.92
+      },
+      "future_signal": "next move leans assert within sovereign.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Execute final resolution path: push aside hidden blockers, clear ambiguity, expose unresolved state. Highest chaos allowed at this stage, but still within sovereign mode.",
+      "hermes_mod_target": "oracle console output + conflict resolution layer"
+    },
+    {
+      "step_index": 6,
+      "timestamp_utc": "2026-07-05T16:26:28.705460+00:00",
+      "hexagram_id": 57,
+      "hexagram_name": "The Gentle",
+      "unicode": "\u4E8E",
+      "binary": "011011",
+      "upper_trigram": "Xun",
+      "lower_trigram": "Xun",
+      "category": "boundary",
+      "action": "YIELD",
+      "emotional_deltas": {
+        "chaos": 0.15,
+        "whimsy": 0.2,
+        "darkTone": 0.1,
+        "coherence": 0.9,
+        "voiceWeight": 0.85
+      },
+      "future_signal": "next move leans yield within boundary.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Penetration without force: update model/narrator/training weights incrementally, not in bulk. Whispered persuasion over retraining.",
+      "hermes_mod_target": "incremental prompt or persona update pathway"
+    },
+    {
+      "step_index": 7,
+      "timestamp_utc": "2026-07-05T16:26:28.736607+00:00",
+      "hexagram_id": 43,
+      "hexagram_name": "Breakthrough",
+      "unicode": "\u4E96",
+      "binary": "111110",
+      "upper_trigram": "Qian",
+      "lower_trigram": "Dui",
+      "category": "sovereign",
+      "action": "ASSERT",
+      "emotional_deltas": {
+        "chaos": 0.3,
+        "whimsy": 0.15,
+        "darkTone": 0.2,
+        "coherence": 0.88,
+        "voiceWeight": 0.92
+      },
+      "future_signal": "next move leans assert within sovereign.",
+      "voice_preset": {
+        "voice_id": "c8f7835e-28a3-4f0c-80d7-c1302ac62aae",
+        "speed": 1.12,
+        "backend": "cartesia"
+      },
+      "translation": "Repeat Step 5 confirmation: same Breakthrough state returns because the map is recursive. This means sovereign resolution is the steady state after pause/yield. Final mod rule: do not add speculative architecture; update existing sovereign paths to stronger deterministic push.",
+      "hermes_mod_target": "overall Hermes runtime enforcement pattern"
+    }
+  ],
+  "progressive_map": {
+    "order": "1.The Creative -> 7.The Army -> 20.Contemplation -> 52.Keeping Still -> 43.Breakthrough -> 57.The Gentle -> 43.Breakthrough",
+    "dominant_emotion_arc": "Highest coherence start, commanded sovereign path, boundary pause phase, final sovereign breakthrough after gentle penetration.",
+    "action_sequence": "ASSERT -> ASSERT -> WAIT -> WAIT -> ASSERT -> YIELD -> ASSERT",
+    "category_sequence": "sovereign -> sovereign -> boundary -> boundary -> sovereign -> boundary -> sovereign",
+    "future_sequence": [
+      "step1: next move leans assert within sovereign.",
+      "step2: next move leans assert within sovereign.",
+      "step3: next move leans wait within boundary.",
+      "step4: next move leans wait within boundary.",
+      "step5: next move leans assert within sovereign.",
+      "step6: next move leans yield within boundary.",
+      "step7: next move leans assert within sovereign."
+    ],
+    "stability": {
+      "max_coherence": 0.98,
+      "min_chaos": 0.05,
+      "avg_coherence": 0.9,
+      "avg_chaos": 0.17,
+      "avg_voiceWeight": 0.88
+    },
+    "transition_points": [
+      "step2->3 sovereign->boundary",
+      "step4->5 boundary->sovereign",
+      "step5->6 sovereign->boundary",
+      "step6->7 boundary->sovereign"
+    ],
+    "return_points": [
+      "step5 == step7 same Breakthrough state"
+    ],
+    "hermes_mode_transitions": [
+      "ASSERT_ASSERT",
+      "ASSERT_WAIT",
+      "WAIT_WAIT",
+      "WAIT_ASSERT",
+      "ASSERT_YIELD",
+      "YIELD_ASSERT"
+    ]
+  },
+  "concrete_hermes_mods": [
+    {
+      "mod_id": "kw-hermes-mod-1",
+      "target_file": "src/openjarvis/emotion/kingwen.py",
+      "target_lines": "321-380",
+      "mod": "Extend consult return schema with `action`, `category`, `future_signal`, `trainingNotes`, and sequential phase index so voice preset resolution in `voice_preset()` uses not only `voiceWeight` but also `action` and `category` to choose delivery style.",
+      "kingwen_evidence": "step1-2 ASSERT sovereign, step3-4 WAIT boundary, step5/7 ASSERT sovereign, step6 YIELD boundary"
+    },
+    {
+      "mod_id": "kw-hermes-mod-2",
+      "target_file": "src/openjarvis/agents/_stubs.py",
+      "target_lines": "68-99",
+      "mod": "Add `kingwen_action`, `kingwen_category`, `kingwen_future_signal`, `canonical_tick_ms` fields to agent/operative stubs and propagate them from `consult()` into prompt builder.",
+      "kingwen_evidence": "`_kingwen_session_id` already set in operative; history append exists but not action/future signal"
+    },
+    {
+      "mod_id": "kw-hermes-mod-3",
+      "target_file": "src/openjarvis/agents/operative.py",
+      "target_lines": "351-472",
+      "mod": "Use `action` and `category` from latest consult entry to gate tool reordering and directive injection. Keep `voiceWeight`/`coherence`/`chaos`/`whimsy`/`darkTone` exact vector from sequence.",
+      "kingwen_evidence": "`_build_kingwen_directive`, `_record_tool_outcome`, `_reorder_tool_calls_by_kingwen` already read history but do not branch by action/category"
+    },
+    {
+      "mod_id": "kw-hermes-mod-4",
+      "target_file": "src/openjarvis/bridge_servers/desktop_execution.py",
+      "target_lines": "355-383",
+      "mod": "In `/v1/desktop/kingwen/consult` response payload, include `action`, `category`, `future_signal`, and `hermes_mode_transition` next-action framing.",
+      "kingwen_evidence": "`voice_preset(...)` is computed at line 357-360, but no `action`/`category` is attached in returned body"
+    },
+    {
+      "mod_id": "kw-hermes-mod-5",
+      "target_file": "src/openjarvis/server/api_routes.py",
+      "target_lines": "560-607",
+      "mod": "In `/v1/kingwen/avatar/{session_id}`, include progressive `next_action` field derived from `consult()` mapping rather than static advisory.",
+      "kingwen_evidence": "Avatar endpoint currently returns advisory state but does not define next transition"
+    },
+    {
+      "mod_id": "kw-hermes-mod-6",
+      "target_file": "desktop/src-tauri/src/overlay.html",
+      "target_lines": "176-193, 371-449",
+      "mod": "Call `/v1/kingwen/avatar/{session_id}` on avatar-state boundary events; render `future_signal`, `action`, and `emotional_deltas` as avatar state indicators. Add visual mode indicator for ASSERT/YIELD/WAIT.",
+      "kingwen_evidence": "Overlay only renders chat and Jiminy `KW` indicator, no avatar state consumption"
+    }
+  ],
+  "verification_plan": [
+    "Run `/v1/desktop/kingwen/consult` again and assert returned JSON includes `action`, `category`, `future_signal`, `hermes_mode_transition` keys.",
+    "Run `/v1/kingwen/avatar/{session_id}` and assert `next_action` field present.",
+    "Run agent tail with `kingwen_history` populated and assert `_build_kingwen_directive` output branches on `action`/`category` values.",
+    "Open overlay WebView and assert avatar state endpoint is polled on interaction boundary transitions."
+  ]
+}
