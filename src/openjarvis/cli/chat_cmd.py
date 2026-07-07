@@ -43,13 +43,18 @@ def _cmd_models(console: "Console", active_model: str, engine_name: str) -> None
         console.print(f"[red]Secrets store unavailable:[/red] {exc}")
         return
 
-    # ── 1. Oracle state + ternary router ───────────────────────────────────
+    # Current King Wen oracle state for ternary routing
     kw_hex_cat = "boundary"
     kw_hex_action = "WAIT"
     try:
-        from openjarvis.emotion.kingwen import getHexagram
+        from openjarvis.emotion.kingwen import KingWenEmotionProvider
         import random, time
-        hw = getHexagram("", session_id="models_cmd", emotional_input=int(time.time()) % 100)
+        provider = KingWenEmotionProvider(
+            registry_path=MODEL_ROLODEX["data_paths"]["hexagram_registry"],
+            weights_path=MODEL_ROLODEX["data_paths"]["emotional_weights"],
+            reflections_path=MODEL_ROLODEX["data_paths"]["temporal_reflections"],
+        )
+        hw = provider.getHexagram("/models", session_id="models_cmd", emotional_input=int(time.time()) % 100)
         kw_hex_cat = hw.get("hexagram_category", "boundary")
         kw_hex_action = hw.get("hexagram_action", hw.get("action", "WAIT"))
     except Exception:
