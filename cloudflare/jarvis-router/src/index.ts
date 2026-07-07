@@ -1,72 +1,105 @@
 /**
  * JARVIS Cloudflare Native Router
  * ================================
- * Single entry-point Worker that routes all JARVIS interactions
- * across the POG2 ecosystem. Every path is intentional.
+ * Single entry-point Worker for JARVIS + King Wen only.
+ *
+ * Separation rules:
+ *   - Jarvis does NOT talk to ichingoracle
+ *   - King Wen does NOT talk to ichingoracle
+ *   - King Wen influences Jarvis decisions between user intent and actionable tooling tasks
  *
  * Routes:
  *   GET  /health                   — liveness probe
- *   POST /oracle/consult           → ichingoracle Worker (King Wen consult)
- *   WS   /oracle/ws                → ichingoracle WebSocket (real-time persona stream)
- *   POST /jarvis/wake              → wake sequence trigger (fires jarvis_wake.py result)
- *   POST /jarvis/intent            → intent decoder (oracle state → tool slots)
+ *   POST /kingwen/consult          → kingwen-oracle Worker (King Wen consult, immutable tables)
+ *   WS   /kingwen/ws               → kingwen-oracle WebSocket
+ *   POST /jarvis/wake              → wake sequence trigger
+ *   POST /jarvis/intent            → intent decoder bridge, King Wen oracle state → tool slots
  *   POST /jarvis/delegate          → Hermes delegation webhook
- *   WS   /globe/ws                 → openjarvis-globe-worker (King Wen consensus fan-out)
+ *   WS   /globe/ws                 → openjarvis-kingwen-globe (consensus fan-out)
  *   POST /training/export          → queue a trace to pog2-collapse-events
  *   GET  /training/status          → check training queue depth
- *   GET  /secrets/endpoints        → list registered Worker endpoints (internal, auth-gated)
- *
- * Bound services (configure in wrangler.toml JARVIS_ROUTER section):
- *   ORACLE_WORKER  — Service binding to ichingoracle
- *   GLOBE_WORKER   — Service binding to openjarvis-kingwen-globe
+ *   GET  /secrets/endpoints        → list registered Worker endpoints (auth-gated)
  */
 
-import { Hono } from "hono";
-import { cors } from "hono/cors";
-import { bearerAuth } from "hono/bearer-auth";
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Env {
-  // Service bindings
-  ORACLE_WORKER: Fetcher;
+export interface Env {
+  KINGWEN_WORKER: Fetcher;
   GLOBE_WORKER: Fetcher;
-
-  // Queue bindings
   POG2_COLLAPSE_QUEUE: Queue;
-
-  // KV
   POG2_SOVEREIGN: KVNamespace;
-
-  // Secrets (set via wrangler secret put)
-  JARVIS_ROUTER_TOKEN: string;    // Bearer token for auth-gated routes
+  JARVIS_ROUTER_TOKEN: string;
   CF_ACCOUNT_ID: string;
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": [
+    "http://localhost:7891",
+    "http://localhost:8000",
+    "http://localhost:3000",
+  ].join(","),
+  "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type,Authorization",
+};
 
-const app = new Hono<{ Bindings: Env }>();
+function jsonResponse(body: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(body), {
+    headers: { "Content-Type": "application/json", ...CORS_HEADERS },
+    ...init,
+  });
+}
 
-// Global CORS — allow JARVIS desktop client + Hermes localhost
-app.use(
-  "/*",
-  cors({
-    origin: ["http://localhost:7891", "http://localhost:8000", "http://localhost:3000"],
-    allowMethods: ["GET", "POST", "OPTIONS"],
-    allowHeaders: ["Content-Type", "Authorization"],
-  })
-);
+async function parseJson(req: Request, fallback: unknown = {}): Promise<unknown> {
+  try {
+    return await req.json();
+  } catch {
+    return fallback;
+  }
+}
+
+async function handleCors(req: Request): Promise<Response | null> {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS_HEADERS });
+  }
+  return null;
+}
+
+async function proxyJson(
+  fetcher: Fetcher,
+  url: string,
+  req: Request,
+  prefix?: Record<string, unknown>,
+): Promise<Response> {
+  const incoming = (await parseJson(req, {})) as Record<string, unknown>;
+  const payload = prefix ? { ...prefix, ...incoming } : incoming;
+  const response = await fetcher.fetch(
+    new Request(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+  );
+  const data = await response.json().catch(() => ({}));
+  return jsonResponse(data, { status: response.status });
+}
+
+async function wsPassthrough(fetcher: Fetcher, url: string, req: Request): Promise<Response> {
+  return fetcher.fetch(new Request(url, req));
+}
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 
-app.get("/health", (c) => {
-  return c.json({
+function healthResponse(): Response {
+  return jsonResponse({
     status: "ok",
     service: "jarvis-router",
     timestamp: Date.now(),
+    separation: {
+      jarvis_to_ichingoracle: false,
+      kingwen_to_ichingoracle: false,
+      kingwen_influences_jarvis_intent: true,
+    },
     routes: [
-      "POST /oracle/consult",
-      "WS   /oracle/ws",
+      "POST /kingwen/consult",
+      "WS   /kingwen/ws",
       "POST /jarvis/wake",
       "POST /jarvis/intent",
       "POST /jarvis/delegate",
@@ -76,121 +109,69 @@ app.get("/health", (c) => {
       "GET  /secrets/endpoints",
     ],
   });
-});
+}
 
-// ─── Oracle Proxy ─────────────────────────────────────────────────────────────
+// ─── King Wen Backend ─────────────────────────────────────────────────────────
 
-/**
- * POST /oracle/consult
- * Proxies to the ichingoracle Worker's /oracle/consult endpoint.
- * Adds JARVIS session metadata to the request.
- */
-app.post("/oracle/consult", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-
-  // Inject JARVIS router metadata
-  const enriched = {
-    ...body,
-    _source: "jarvis-router",
-    _timestamp: Date.now(),
-  };
-
-  const response = await c.env.ORACLE_WORKER.fetch(
-    new Request("https://ichingoracle.kristain33rs.workers.dev/oracle/consult", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(enriched),
-    })
+async function kingwenConsult(env: Env, req: Request): Promise<Response> {
+  return proxyJson(
+    env.KINGWEN_WORKER,
+    "https://kingwen-oracle.kristain33rs.workers.dev/consult",
+    req,
+    { _source: "jarvis-router", _backend: "kingwen-oracle" },
   );
+}
 
-  const data = await response.json();
-  return c.json(data, response.status as any);
-});
-
-/**
- * GET /oracle/ws  (WebSocket upgrade)
- * Tunnels the WebSocket connection through to ichingoracle's /ws endpoint.
- */
-app.get("/oracle/ws", async (c) => {
-  const upgradeHeader = c.req.header("Upgrade");
-  if (!upgradeHeader || upgradeHeader !== "websocket") {
-    return c.text("Expected WebSocket upgrade", 426);
-  }
-
-  // Forward the WebSocket upgrade to the Oracle worker
-  return c.env.ORACLE_WORKER.fetch(
-    new Request("https://ichingoracle.kristain33rs.workers.dev/ws", c.req.raw)
-  );
-});
+async function kingwenWs(env: Env, req: Request): Promise<Response> {
+  return wsPassthrough(env.KINGWEN_WORKER, "https://kingwen-oracle.kristain33rs.workers.dev/ws", req);
+}
 
 // ─── JARVIS Endpoints ─────────────────────────────────────────────────────────
 
-/**
- * POST /jarvis/wake
- * Stores the wake result in KV and broadcasts to Globe WebSocket observers.
- */
-app.post("/jarvis/wake", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
+async function jarvisWake(env: Env, req: Request): Promise<Response> {
+  const body = (await parseJson(req, {})) as Record<string, unknown>;
+  const wakeRecord = { ...body, received_at: Date.now() };
+  await env.POG2_SOVEREIGN.put("jarvis:last_wake", JSON.stringify(wakeRecord), { expirationTtl: 86400 });
 
-  const wakeRecord = {
-    ...body,
-    received_at: Date.now(),
-  };
-
-  // Persist latest wake state to KV
-  await c.env.POG2_SOVEREIGN.put(
-    "jarvis:last_wake",
-    JSON.stringify(wakeRecord),
-    { expirationTtl: 86400 }
-  );
-
-  // Fan out to Globe if hexagram data present
-  if (body.hexagram_id) {
+  const hexagramId = body.hexagram_id;
+  if (typeof hexagramId === "string" && hexagramId) {
     const globeMsg = {
       type: "KINGWEN_CONSENSUS_UPDATE",
       source: "jarvis_wake",
       timestamp: Date.now(),
-      hexagram_id: body.hexagram_id,
+      hexagram_id: hexagramId,
       hexagram_name: body.hexagram_name,
       porosity: body.porosity_ratio,
-      voiceWeight: body.expanded_vector?.voiceWeight,
-      coherence: body.expanded_vector?.coherence,
+      voiceWeight: (body.expanded_vector as Record<string, unknown> | undefined)?.voiceWeight,
+      coherence: (body.expanded_vector as Record<string, unknown> | undefined)?.coherence,
       phase_temporal: body.temporal,
       trajectory: body.tone,
     };
-
-    // Non-blocking broadcast to Globe (fire and forget)
-    c.env.GLOBE_WORKER.fetch(
+    env.GLOBE_WORKER.fetch(
       new Request("https://openjarvis-kingwen-globe.kristain33rs.workers.dev/parties/globe/jarvis-wake", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(globeMsg),
-      })
+      }),
     ).catch(() => {});
   }
 
-  return c.json({ status: "wake_received", stored: true });
-});
+  return jsonResponse({ status: "wake_received", stored: true });
+}
 
-/**
- * POST /jarvis/intent
- * Accepts a raw user message + optional oracle state, returns ranked tool slots.
- * This is the pure HTTP bridge for the intent decoder.
- */
-app.post("/jarvis/intent", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const { user_text = "", oracle_state = null } = body;
+async function jarvisIntent(env: Env, req: Request): Promise<Response> {
+  const body = (await parseJson(req, {})) as { user_text?: string; oracle_state?: unknown };
+  const userText = typeof body.user_text === "string" ? body.user_text : "";
 
-  // If no oracle_state provided, fetch one from ichingoracle first
-  let oracleResult = oracle_state;
-  if (!oracleResult) {
+  let oracleResult = body.oracle_state ?? null;
+  if (oracleResult === null) {
     try {
-      const oracleResp = await c.env.ORACLE_WORKER.fetch(
-        new Request("https://ichingoracle.kristain33rs.workers.dev/oracle/consult", {
+      const oracleResp = await env.KINGWEN_WORKER.fetch(
+        new Request("https://kingwen-oracle.kristain33rs.workers.dev/consult", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: user_text, source: "jarvis-intent" }),
-        })
+          body: JSON.stringify({ query: userText, source: "jarvis-intent" }),
+        }),
       );
       oracleResult = await oracleResp.json();
     } catch {
@@ -198,71 +179,43 @@ app.post("/jarvis/intent", async (c) => {
     }
   }
 
-  return c.json({
-    user_text,
+  return jsonResponse({
+    user_text: userText,
     oracle_state: oracleResult,
-    note: "Route to jarvis_wake.py intent_slots for tool selection. Oracle state is Jiminy Cricket's input.",
+    note: "King Wen oracle state feeds Jarvis intent decoding. Tool selection is decided locally from this state.",
     intent_endpoint: "python src/openjarvis/intent/decoder.py",
   });
-});
+}
 
-/**
- * POST /jarvis/delegate
- * Receives delegation events from JARVIS or Hermes and stores in KV queue.
- */
-app.post("/jarvis/delegate", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-
-  const record = {
-    ...body,
-    queued_at: Date.now(),
-  };
-
-  // Push to collapse queue for training data capture
-  if (body.task_type === "model_train" || body.event_type === "trace_complete") {
-    await c.env.POG2_COLLAPSE_QUEUE.send({
+async function jarvisDelegate(env: Env, req: Request): Promise<Response> {
+  const body = (await parseJson(req, {})) as Record<string, unknown>;
+  const record = { ...body, queued_at: Date.now() };
+  const taskType = body.task_type;
+  const eventType = body.event_type;
+  if (taskType === "model_train" || eventType === "trace_complete") {
+    await env.POG2_COLLAPSE_QUEUE.send({
       type: "delegation",
       payload: record,
     });
   }
-
-  // Store in KV log
   const key = `jarvis:delegate:${Date.now()}`;
-  await c.env.POG2_SOVEREIGN.put(key, JSON.stringify(record), {
-    expirationTtl: 604800, // 7 days
-  });
+  await env.POG2_SOVEREIGN.put(key, JSON.stringify(record), { expirationTtl: 604800 });
+  return jsonResponse({ status: "delegated", key });
+}
 
-  return c.json({ status: "delegated", key });
-});
-
-// ─── Globe WebSocket Proxy ─────────────────────────────────────────────────────
-
-/**
- * GET /globe/ws  (WebSocket upgrade)
- * Tunnels to the PartyKit Globe Durable Object.
- */
-app.get("/globe/ws", async (c) => {
-  return c.env.GLOBE_WORKER.fetch(
-    new Request(
-      "https://openjarvis-kingwen-globe.kristain33rs.workers.dev/parties/globe/main",
-      c.req.raw
-    )
+async function globeWs(env: Env, req: Request): Promise<Response> {
+  return wsPassthrough(
+    env.GLOBE_WORKER,
+    "https://openjarvis-kingwen-globe.kristain33rs.workers.dev/parties/globe/main",
+    req,
   );
-});
+}
 
-// ─── Training Queue ───────────────────────────────────────────────────────────
-
-/**
- * POST /training/export
- * Accepts a JARVIS trace record and queues it to pog2-collapse-events
- * for the Megatron-LM KingWen dataset pipeline.
- */
-app.post("/training/export", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-
-  await c.env.POG2_COLLAPSE_QUEUE.send({
+async function trainingExport(env: Env, req: Request): Promise<Response> {
+  const body = (await parseJson(req, {})) as Record<string, unknown>;
+  await env.POG2_COLLAPSE_QUEUE.send({
     type: "kingwen_trace",
-    trace_id: body.trace_id || `tr_${Date.now()}`,
+    trace_id: (typeof body.trace_id === "string" && body.trace_id) || `tr_${Date.now()}`,
     hexagram_id: body.hexagram_id,
     porosity_ratio: body.porosity_ratio,
     quantum_collapse_delta: body.quantum_collapse_delta,
@@ -270,76 +223,108 @@ app.post("/training/export", async (c) => {
     weight: body.weight,
     timestamp: Date.now(),
   });
+  return jsonResponse({ status: "queued", queue: "pog2-collapse-events" });
+}
 
-  return c.json({ status: "queued", queue: "pog2-collapse-events" });
-});
-
-app.get("/training/status", async (c) => {
-  const last = await c.env.POG2_SOVEREIGN.get("jarvis:last_wake");
-  return c.json({
+async function trainingStatus(env: Env): Promise<Response> {
+  const last = await env.POG2_SOVEREIGN.get("jarvis:last_wake");
+  return jsonResponse({
     queue: "pog2-collapse-events",
     last_wake: last ? JSON.parse(last) : null,
     note: "Use Cloudflare dashboard for queue depth metrics.",
   });
-});
+}
 
-// ─── Secrets / Endpoints Registry (auth-gated) ───────────────────────────────
+async function secretsEndpoints(): Response {
+  return jsonResponse(WORKER_ENDPOINTS);
+}
 
-app.get(
-  "/secrets/endpoints",
-  bearerAuth({ token: (c) => c.env.JARVIS_ROUTER_TOKEN }),
-  (c) => {
-    return c.json(WORKER_ENDPOINTS);
-  }
-);
+// ─── Main Fetch Handler ───────────────────────────────────────────────────────
 
-// ─── 404 ──────────────────────────────────────────────────────────────────────
+export default {
+  async fetch(req: Request, env: Env): Promise<Response> {
+    const cors = await handleCors(req);
+    if (cors) return cors;
 
-app.notFound((c) => c.json({ error: "not_found", path: c.req.path }, 404));
-app.onError((err, c) => c.json({ error: err.message }, 500));
+    const url = new URL(req.url);
+    const path = url.pathname;
 
-// ─── Export ───────────────────────────────────────────────────────────────────
+    if (path === "/health" && req.method === "GET") {
+      return healthResponse();
+    }
 
-export default app;
+    if (path === "/kingwen/consult" && req.method === "POST") {
+      return kingwenConsult(env, req);
+    }
+    if (path === "/kingwen/ws") {
+      return kingwenWs(env, req);
+    }
 
-// ─── Worker Endpoints Manifest (also served by secrets store) ─────────────────
-// This is the canonical registry — imported by the Python secrets store.
+    if (path === "/jarvis/wake" && req.method === "POST") {
+      return jarvisWake(env, req);
+    }
+    if (path === "/jarvis/intent" && req.method === "POST") {
+      return jarvisIntent(env, req);
+    }
+    if (path === "/jarvis/delegate" && req.method === "POST") {
+      return jarvisDelegate(env, req);
+    }
+    if (path === "/globe/ws") {
+      return globeWs(env, req);
+    }
+    if (path === "/training/export" && req.method === "POST") {
+      return trainingExport(env, req);
+    }
+    if (path === "/training/status" && req.method === "GET") {
+      return trainingStatus(env);
+    }
+    if (path === "/secrets/endpoints" && req.method === "GET") {
+      const auth = req.headers.get("Authorization") || "";
+      const token = auth.replace("Bearer ", "").trim();
+      if (!token || token !== env.JARVIS_ROUTER_TOKEN) {
+        return jsonResponse({ error: "unauthorized" }, { status: 401 });
+      }
+      return secretsEndpoints();
+    }
+
+    return jsonResponse({ error: "not_found", path }, { status: 404 });
+  },
+};
+
+// ─── Worker Endpoints Manifest ────────────────────────────────────────────────
 
 export const WORKER_ENDPOINTS = {
   _meta: {
     account_id: "6872653edcee9c791787c1b783173793",
     account_subdomain: "kristain33rs",
     updated: "2026-07-07",
+    separation: {
+      jarvis_to_ichingoracle: false,
+      kingwen_to_ichingoracle: false,
+      kingwen_influences_jarvis_intent: true,
+    },
   },
-  oracle: {
-    name: "ichingoracle",
-    base_url: "https://ichingoracle.kristain33rs.workers.dev",
+  kingwen: {
+    name: "kingwen-oracle",
+    base_url: "https://kingwen-oracle.kristain33rs.workers.dev",
+    backend: "kingwen_immutable_tables",
     endpoints: {
-      consult:    "POST /oracle/consult",
-      websocket:  "WS   /ws",
-      health:     "GET  /health",
+      consult: "POST /consult",
+      health: "GET /health",
+      tts: "POST /tts",
+      random: "GET /random",
+      message: "GET /message",
     },
     bindings: {
-      durable_objects: ["POG2OrchestratorDO", "POG2WebSocketDO"],
-      kv:  ["POG2_SOVEREIGN", "POG2_DISSIPATOR"],
-      d1:  ["POG2_BOUNDARY (pog2-boundary)"],
-      r2:  ["POG2_TRANSFORMER (pog2-transformer)"],
-      queues: [
-        "pog2-collapse-events",
-        "pog2-drift-events",
-        "pog2-continuity-events",
-        "pog2-crisis-broadcast",
-        "pog2-persona-outputs",
-      ],
-      ai: "Workers AI binding (AI)",
+      ai: "AI",
     },
   },
   globe: {
     name: "openjarvis-kingwen-globe",
     base_url: "https://openjarvis-kingwen-globe.kristain33rs.workers.dev",
     endpoints: {
-      websocket:   "WS   /parties/globe/:room_id",
-      broadcast:   "POST /parties/globe/:room_id",
+      websocket: "WS /parties/globe/:room_id",
+      broadcast: "POST /parties/globe/:room_id",
     },
     bindings: {
       durable_objects: ["Globe (SQLite)"],
@@ -349,16 +334,16 @@ export const WORKER_ENDPOINTS = {
     name: "jarvis-router",
     base_url: "https://jarvis-router.kristain33rs.workers.dev",
     endpoints: {
-      health:           "GET  /health",
-      oracle_consult:   "POST /oracle/consult",
-      oracle_ws:        "WS   /oracle/ws",
-      jarvis_wake:      "POST /jarvis/wake",
-      jarvis_intent:    "POST /jarvis/intent",
-      jarvis_delegate:  "POST /jarvis/delegate",
-      globe_ws:         "WS   /globe/ws",
-      training_export:  "POST /training/export",
-      training_status:  "GET  /training/status",
-      endpoints:        "GET  /secrets/endpoints  [Bearer auth]",
+      health: "GET /health",
+      kingwen_consult: "POST /kingwen/consult",
+      kingwen_ws: "WS /kingwen/ws",
+      jarvis_wake: "POST /jarvis/wake",
+      jarvis_intent: "POST /jarvis/intent",
+      jarvis_delegate: "POST /jarvis/delegate",
+      globe_ws: "WS /globe/ws",
+      training_export: "POST /training/export",
+      training_status: "GET /training/status",
+      endpoints: "GET /secrets/endpoints [Bearer auth]",
     },
   },
 };
