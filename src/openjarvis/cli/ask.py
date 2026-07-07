@@ -485,16 +485,23 @@ def _append_kingwen_block(agent, result_obj, *, user_input: str = "") -> None:
                 return candidate
         return ""
 
-    unified = ""
-    try:
-        if hasattr(agent, "_build_kingwen_tail_with_intent") and hasattr(agent, "_build_kingwen_directive"):
-            unified = agent._build_kingwen_tail_with_intent(user_input)
+    mode = getattr(agent, "_kingwen_broadcast_mode", "command")
+    lore = getattr(agent, "_build_kingwen_directional_lore", lambda _: "")(
+        user_input or ""
+    )
+    directive = getattr(agent, "_build_kingwen_directive", lambda: "")()
+    block = getattr(agent, "_build_kingwen_response_block", lambda: "")()
+    full_block = f"{lore}\n\n{directive}\n\n{block}" if directive or lore else block
+    if mode == "whisper":
+        unified = lore or directive
+    elif mode == "suggest":
+        if not full_block:
+            unified = ""
         else:
-            directive = getattr(agent, "_build_kingwen_directive", lambda: "")()
-            block = getattr(agent, "_build_kingwen_response_block", lambda: "")()
-            unified = f"{directive}\n\n{block}" if directive else block
-    except Exception:
-        unified = ""
+            first_paragraph = full_block.split("\n\n", 1)[0]
+            unified = f"{lore}\n\n{first_paragraph}" if lore else first_paragraph
+    else:
+        unified = full_block
     if not unified:
         return
 

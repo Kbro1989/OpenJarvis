@@ -329,12 +329,20 @@ async def kingwen_consult(payload: dict[str, Any]) -> dict[str, Any]:
         )
 
     session_id = str(payload.get("session_id", "desktop-overlay") or "desktop-overlay")
-    emotional_input = payload.get("emotional_input", 50)
+    emotional_input = payload.get("emotional_input")
+    if emotional_input is None or str(emotional_input).strip() == "":
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "emotional_input_required", "message": "`emotional_input` is required for consult."},
+        )
 
     try:
         emotional_input = int(emotional_input)
     except (TypeError, ValueError):
-        emotional_input = 50
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "emotional_input_invalid", "message": "`emotional_input` must be an integer."},
+        )
     emotional_input = max(0, min(100, emotional_input))
 
     try:

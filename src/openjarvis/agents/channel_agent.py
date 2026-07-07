@@ -112,18 +112,13 @@ class ChannelAgent:
                 from openjarvis.cli.ask import _append_kingwen_block
 
                 _append_kingwen_block(self._agent, result, user_input=msg.content)
-                response_text = getattr(result, "content", str(result))
+                response_text = getattr(result, "content", str(response_text))
             except Exception:
                 pass
         except Exception as exc:
             friendly = (
                 f"Sorry, I ran into an error while processing your request: {exc}"
             )
-            # First positional arg is the DESTINATION (per-adapter native
-            # ID — Discord channel ID, Slack channel ID, etc.); not the
-            # channel TYPE label. The `conversation_id=` kwarg is the
-            # native message ID for reply threading (per DiscordChannel
-            # / SlackChannel / etc. send() contract — see #459).
             self._channel.send(
                 msg.conversation_id,
                 friendly,
@@ -132,7 +127,6 @@ class ChannelAgent:
             return
 
         is_long = len(response_text) > _LONG_RESPONSE_THRESHOLD
-
         if query_type == "deep" or is_long:
             preview = response_text[:_LONG_RESPONSE_THRESHOLD]
             reply = _ESCALATION_TEMPLATE.format(
@@ -142,16 +136,22 @@ class ChannelAgent:
         else:
             reply = response_text
 
-        kingwen_block = getattr(self._agent, "_build_kingwen_response_block", lambda: "")()
-        if kingwen_block:
-            reply = f"{reply}\n\n{kingwen_block}"
-
-        try:
-            directive = getattr(self._agent, "_build_kingwen_directive", lambda: "")()
-        except Exception:
-            directive = ""
-        if directive:
-            reply = f"{directive}\n\n{reply}" if reply.strip() else directive
+        broadcast = getattr(self._agent, "_kingwen_broadcast_mode", "command")
+        if broadcast != "whisper":
+            try:
+                directive = getattr(self._agent, "_build_kingwen_directive", lambda: "")()
+                response_block = getattr(self._agent, "_build_kingwen_response_block", lambda: "")()
+                if broadcast == "suggest" and (directive or response_block):
+                    tail = response_block.split("\n\n", 1)[0] if response_block else ""
+                    tail = f"{directive}\n\n{tail}" if directive else tail
+                elif broadcast == "command":
+                    tail = f"{directive}\n\n{response_block}" if directive else response_block
+                else:
+                    tail = directive
+                if tail:
+                    reply = f"{reply}\n\n{tail}" if reply.strip() else tail
+            except Exception:
+                pass
 
         # Same field-mapping as the error path above (#459).
         self._channel.send(

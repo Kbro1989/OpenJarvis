@@ -17,6 +17,125 @@ from openjarvis.memory import publish_completed_exchange
 from openjarvis.cli.ask import _append_kingwen_block
 
 
+def _cmd_models(console: "Console", active_model: str, engine_name: str) -> None:
+    """
+    /models — ModelRolodex display.
+    Shows:
+      1. Live Ollama models + ternary router class (King Wen-conscious)
+      2. Task chain (query-type → preferred model order)
+      3. Cloudflare Worker endpoints from secrets store
+    """
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.rule import Rule
+
+    try:
+        from openjarvis.secrets.store import (
+            CF_WORKERS, LOCAL_PORTS, MODEL_ROLODEX,
+            task_model_chain, ternary_model_class,
+        )
+    except ImportError as exc:
+        console.print(f"[red]Secrets store unavailable:[/red] {exc}")
+        return
+
+    # ── 1. Live Ollama models + ternary router class ───────────────────────
+    live_models: list = []
+    ollama_url = LOCAL_PORTS.get("ollama", {}).get("url", "http://localhost:11434")
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(f"{ollama_url}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = _json.loads(resp.read())
+            live_models = [m["name"] for m in data.get("models", [])]
+    except Exception:
+        pass
+
+    # Current King Wen oracle state for ternary routing
+    kw_hex_cat = "boundary"
+    kw_hex_action = "WAIT"
+    try:
+        from openjarvis.emotion.kingwen import getHexagram
+        import random, time
+        hw = getHexagram("", session_id="models_cmd", emotional_input=int(time.time()) % 100)
+        kw_hex_cat = hw.get("hexagram_category", "boundary")
+        kw_hex_action = hw.get("hexagram_action", hw.get("action", "WAIT"))
+    except Exception:
+        pass
+
+    ternary_class = ternary_model_class(kw_hex_cat, kw_hex_action)
+    model_classes = MODEL_ROLODEX.get("model_classes", {})
+    ternary_keywords = model_classes.get(ternary_class, [])
+
+    # Build live model table
+    mdl_table = Table(title="Live Ollama Models + Ternary Router", show_lines=False)
+    mdl_table.add_column("Model", style="cyan", no_wrap=True)
+    mdl_table.add_column("Class match", style="green")
+    mdl_table.add_column("Active", justify="center")
+
+    if live_models:
+        for m in live_models:
+            matched_class = "—"
+            for cls_name, kws in model_classes.items():
+                if any(kw in m.lower() for kw in kws):
+                    matched_class = cls_name
+                    break
+            is_ternary_pick = any(kw in m.lower() for kw in ternary_keywords)
+            is_active = "★" if m == active_model else ("◆" if is_ternary_pick else "")
+            mdl_table.add_row(m, matched_class, is_active)
+    else:
+        mdl_table.add_row("[dim]Ollama offline or no models[/dim]", "—", "")
+
+    console.print(mdl_table)
+    console.print(
+        f"[dim]Oracle: hex_cat=[cyan]{kw_hex_cat}[/cyan]  action=[cyan]{kw_hex_action}[/cyan]  "
+        f"→ ternary class=[green]{ternary_class}[/green]  "
+        f"keywords={ternary_keywords}[/dim]"
+    )
+
+    # ── 2. Task chain ──────────────────────────────────────────────────────
+    console.print()
+    tc_table = Table(title="Task Chain (query type → model priority)", show_lines=False)
+    tc_table.add_column("Task", style="yellow", width=12)
+    tc_table.add_column("Priority 1", style="cyan")
+    tc_table.add_column("Priority 2", style="dim cyan")
+    tc_table.add_column("Priority 3", style="dim")
+
+    for task, chain in MODEL_ROLODEX.get("task_chain", {}).items():
+        def _avail(m: str) -> str:
+            return f"[green]{m}[/green]" if m in live_models else f"[dim]{m}[/dim]"
+        tc_table.add_row(
+            task,
+            _avail(chain[0]) if len(chain) > 0 else "—",
+            _avail(chain[1]) if len(chain) > 1 else "—",
+            _avail(chain[2]) if len(chain) > 2 else "—",
+        )
+
+    console.print(tc_table)
+
+    # ── 3. CF Worker endpoints (brief) ────────────────────────────────────
+    console.print()
+    cf_table = Table(title="Cloudflare Workers", show_lines=False)
+    cf_table.add_column("Worker", style="magenta", width=22)
+    cf_table.add_column("URL", style="blue")
+    cf_table.add_column("Status", justify="center")
+
+    status_style = {"live": "[green]live[/green]", "not_deployed": "[yellow]pending[/yellow]"}
+    for name, w in CF_WORKERS.items():
+        st = w.get("status", "unknown")
+        cf_table.add_row(
+            w.get("worker_name", name),
+            w.get("base_url", ""),
+            status_style.get(st, st),
+        )
+
+    console.print(cf_table)
+    console.print(
+        f"[dim]Active session: engine=[cyan]{engine_name}[/cyan]  "
+        f"model=[cyan]{active_model}[/cyan]  "
+        f"ollama={ollama_url}[/dim]"
+    )
+
+
 def _read_input(prompt: str = "You> ") -> Optional[str]:
     """Read user input with graceful EOF handling."""
     try:
@@ -244,7 +363,7 @@ def chat(
             if not query:
                 console.print("[yellow]Usage: /oracle <your question>[/yellow]")
                 continue
-            from openjarvis.cli._oracle_speak import oracle_speak_async
+            from openjarvis.cli._oracle_speak import oracle_speak_async, get_emotional_input
 
             def _done(fut):
                 try:
@@ -252,9 +371,24 @@ def chat(
                 except Exception as exc:
                     console.print(f"\n[red]Oracle voice failed: {exc}[/red]\n")
                     return
-                console.print(_oracle_render(result))
+                mode = result.get("mode", "chat")
+                console.print(f"\n[bold magenta]Oracle[/bold magenta] [{mode}]")
+                console.print(result.get("text_spoken", ""))
+                scenes = result.get("scenes") or []
+                if scenes:
+                    scene = scenes[0]
+                    prosody = scene.get("prosody") or {}
+                    console.print(
+                        f"[dim]porosity={result.get('porosity')} trajectory={result.get('trajectory')} dominant={result.get('dominant_axis')} rule={result.get('rule')} "
+                        f"chaos={prosody.get('chaos',0):.2f} whimsy={prosody.get('whimsy',0):.2f} darkTone={prosody.get('darkTone',0):.2f} coherence={prosody.get('coherence',0):.2f}[/dim]"
+                    )
+                if result.get("audio_path"):
+                    played = "yes" if result.get("played") else "no"
+                    console.print(f"[dim]audio={result.get('audio_path')} played={played} backend={result.get('backend')}[/dim]")
+                if mode == "do" and result.get("tool_hint"):
+                    console.print(f"[bold yellow]Do[/bold yellow]: {result.get('tool_hint')} | rule={result.get('rule')}")
 
-            future = oracle_speak_async(query, on_done=_done)
+            future = oracle_speak_async(query, emotional_input=get_emotional_input(), on_done=_done)
             console.print("[dim]Oracle is consulting... voice will appear when ready.[/dim]")
             continue
         elif cmd.startswith("/counsel "):
@@ -262,7 +396,7 @@ def chat(
             if not query:
                 console.print("[yellow]Usage: /counsel <your question>[/yellow]")
                 continue
-            from openjarvis.cli._oracle_speak import oracle_speak_async
+            from openjarvis.cli._oracle_speak import oracle_speak_async, get_emotional_input
 
             counsel_prefix = "Counsel me through past, present, and future truth: "
 
@@ -274,7 +408,7 @@ def chat(
                     return
                 console.print(_oracle_render(result))
 
-            future = oracle_speak_async(counsel_prefix + query, on_done=_done)
+            future = oracle_speak_async(counsel_prefix + query, emotional_input=get_emotional_input(), on_done=_done)
             console.print("[dim]Oracle is counseling... voice will appear when ready.[/dim]")
             continue
         elif cmd == "/model":
@@ -282,12 +416,16 @@ def chat(
                 f"Model: [cyan]{model}[/cyan]  Engine: [cyan]{engine_name}[/cyan]"
             )
             continue
+        elif cmd == "/models":
+            _cmd_models(console, model, engine_name)
+            continue
         elif cmd == "/help":
             console.print(
                 "[bold]Commands:[/bold]\n"
                 "  /quit, /exit  — end session\n"
                 "  /clear        — clear conversation\n"
-                "  /model        — show model info\n"
+                "  /model        — show active model\n"
+                "  /models       — ModelRolodex: live Ollama + ternary router + CF workers\n"
                 "  /history      — show conversation\n"
                 "  /oracle <q>   — consult King Wen, synthesize voice to file\n"
                 "  /counsel <q>  — same as /oracle with PPF framing\n"

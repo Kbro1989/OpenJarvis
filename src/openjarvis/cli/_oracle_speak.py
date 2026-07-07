@@ -11,10 +11,13 @@ from __future__ import annotations
 
 import json
 import os
+import platform
+import shutil
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 # ---------------------------------------------------------------------------
 # Deterministic output directory
@@ -34,31 +37,30 @@ _KINGWEN_WORKER_URL = os.environ.get(
 )
 
 
+def _http_request_json(url: str, body: dict, *, timeout: float = 30.0) -> dict:
+    import httpx
+
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        resp = client.post(url, json=body, headers={"Accept": "application/json"})
+        resp.raise_for_status()
+        return resp.json()
+
+
 def _consult_worker(
     text: str,
     session_id: str,
     emotional_input: int,
     timeout: float = 30.0,
 ) -> Dict[str, Any]:
-    import urllib.request
-
-    body = json.dumps(
+    return _http_request_json(
+        f"{_KINGWEN_WORKER_URL}/consult",
         {
             "text": text,
             "session_id": session_id,
             "emotional_input": emotional_input,
-        }
-    ).encode("utf-8")
-
-    req = urllib.request.Request(
-        f"{_KINGWEN_WORKER_URL}/consult",
-        data=body,
-        headers={"Content-Type": "application/json"},
-        method="POST",
+        },
+        timeout=timeout,
     )
-
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
 
 
 # ---------------------------------------------------------------------------
@@ -68,6 +70,11 @@ _KINGWEN_TTS_URL = os.environ.get(
     "KINGWEN_TTS_URL",
     "https://kingwen-oracle.kristain33rs.workers.dev/tts",
 )
+
+
+def _is_cloud_endpoint(url: str) -> bool:
+    host = (url or "").lower()
+    return "workers.dev" in host or "cloudflare" in host
 
 
 def _tts_worker(text: str, speaker: str = "luna", timeout: float = 30.0) -> bytes:
@@ -96,7 +103,7 @@ def _tts_worker_with_vector(
     session_id: str = "openjarvis",
     timeout: float = 30.0,
 ) -> Tuple[bytes, Dict[str, str]]:
-    import urllib.request
+    import httpx
 
     payload: Dict[str, Any] = {
         "text": text,
@@ -116,17 +123,13 @@ def _tts_worker_with_vector(
     if agree_temporal:
         payload["agree_temporal"] = agree_temporal
 
-    body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        _KINGWEN_TTS_URL,
-        data=body,
-        headers={
-            "Content-Type": "application/json",
-            "Accept": "audio/mpeg",
-        },
-        method="POST",
-    )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+        resp = client.post(
+            _KINGWEN_TTS_URL,
+            json=payload,
+            headers={"Accept": "audio/mpeg"},
+        )
+        resp.raise_for_status()
         headers = {k.lower(): v for k, v in resp.headers.items()}
         return resp.read(), headers
 
@@ -210,6 +213,108 @@ def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, 
 
 
 # ---------------------------------------------------------------------------
+# Playback — closes the oracle-to-speaker circuit
+# ---------------------------------------------------------------------------
+def _play_audio_path(audio_path: str, porosity: float | None = None) -> bool:
+    """Play an audio artifact through the local system.
+
+    Optional porosity-gated routing via winappaudiorouter when available:
+    - low porosity: default endpoint
+    - medium porosity: secondary endpoint if present
+    - high porosity: network endpoint if present
+
+    Falls back to existing ffplay/winsound/PowerShell chain.
+    """
+    path = Path(audio_path)
+    if not path.exists() or not path.is_file():
+        return False
+
+    porosity_value = 0.35 if porosity is None else float(porosity)
+
+    def _default_playback() -> bool:
+        system = platform.system()
+        try:
+            if system == "Windows":
+                if shutil.which("ffplay"):
+                    subprocess.run(
+                        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                    )
+                    return True
+                try:
+                    import winsound
+
+                    winsound.PlaySound(str(path), winsound.SND_FILENAME)
+                    return True
+                except Exception:
+                    pass
+                ps_cmd = (
+                    "Add-Type -AssemblyName presentationCore; "
+                    "$p = New-Object System.Windows.Media.MediaPlayer; "
+                    f"$p.Open('{path.as_uri()}'); "
+                    "$p.Play(); Start-Sleep -Seconds 1; $p.Close()"
+                )
+                subprocess.run(
+                    ["powershell", "-NoProfile", "-Command", ps_cmd],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+
+            if shutil.which("ffplay"):
+                subprocess.run(
+                    ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True,
+                )
+                return True
+            players = ["aplay", "afplay", "paplay"]
+            for player in players:
+                if shutil.which(player):
+                    subprocess.run(
+                        [player, str(path)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        check=True,
+                    )
+                    return True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError, Exception):
+            return False
+
+        return False
+
+    try:
+        import winappaudiorouter as war  # type: ignore
+
+        target_device = None
+        try:
+            if porosity_value < 0.3:
+                target_device = None  # default endpoint
+            elif porosity_value < 0.8:
+                input_devs = war.list_output_devices()
+                if len(input_devs) > 1:
+                    target_device = input_devs[1]
+            else:
+                input_devs = war.list_output_devices()
+                if len(input_devs) > 1:
+                    target_device = input_devs[-1]
+
+            if target_device is not None:
+                device_id = getattr(target_device, "id", None) or getattr(target_device, "device_id", None) or str(target_device)
+                war.set_app_output_device(process_name="python.exe", device=device_id)
+        except Exception:
+            # Routing best-effort only; fall back to default playback
+            pass
+
+        return _default_playback()
+    except ImportError:
+        return _default_playback()
+
+
+# ---------------------------------------------------------------------------
 # Speaker mapping — dominant axis → aura-2 voice
 # ---------------------------------------------------------------------------
 _SPEAKER_MAP: Dict[str, str] = {
@@ -233,6 +338,102 @@ def _dominant_axis(vector: Dict[str, float]) -> str:
 
 def _select_speaker(vector: Dict[str, float]) -> str:
     return _SPEAKER_MAP.get(_dominant_axis(vector), "luna")
+
+
+# ---------------------------------------------------------------------------
+# King Wen action router — chat vs do split
+# ---------------------------------------------------------------------------
+def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
+    """Route consult result into chat or do path.
+
+    Returns:
+      mode: "chat" | "do"
+      text: what to speak/print
+      scenes: optional scene-shaped metadata list for expressive rendering
+      tool_hint: optional downstream tool/action hint
+      rule: short explanation for audit/training
+    """
+    tongue = consult.get("emotional_tongue") or {}
+    raw = tongue.get("training_weight_vectors") or {}
+    vector = {
+        "voiceWeight": raw.get("voiceWeight", 0.0),
+        "coherence": raw.get("coherence", 0.0),
+        "chaos": raw.get("chaos", 0.0),
+        "whimsy": raw.get("whimsy", 0.0),
+        "darkTone": raw.get("darkTone", 0.0),
+    }
+    dominant = _dominant_axis(vector)
+    porosity = tongue.get("porosity") if isinstance(tongue, dict) else None
+    porosity_value = 0.35 if porosity is None else float(porosity)
+    trajectory = (consult.get("trajectory") or "still").lower()
+    agree = consult.get("phase_temporal") or consult.get("agree_temporal") or "present"
+
+    # Default to chat
+    mode = "chat"
+    tool_hint = None
+    rule = "default_chat"
+
+    # Do-path signals
+    if dominant == "voiceWeight" and vector["coherence"] >= 0.65 and vector["chaos"] <= 0.25:
+        mode = "do"
+        tool_hint = "assert"
+        rule = "voice_directive_assert"
+    elif dominant == "coherence" and porosity_value >= 0.55 and trajectory in {"still", "converging"}:
+        mode = "do"
+        tool_hint = "hold_and_execute"
+        rule = "coherent_focus_execute"
+    elif porosity_value <= 0.2:
+        mode = "do"
+        tool_hint = "decisive"
+        rule = "low_porosity_decisive"
+    elif trajectory == "diverging" and vector["chaos"] > 0.35:
+        mode = "chat"
+        tool_hint = "wait"
+        rule = "diverging_chaos_chat"
+    elif dominant == "whimsy" and vector["whimsy"] >= 0.6:
+        mode = "chat"
+        tool_hint = "begin"
+        rule = "whimsy_narrative"
+
+    # Text selection keeps minimal map on do path, richer text on chat path
+    if mode == "do":
+        text = {
+            "voiceWeight": "Assert.",
+            "darkTone": "Yield.",
+            "chaos": "Wait.",
+            "coherence": "Hold.",
+            "whimsy": "Begin.",
+        }.get(dominant, "Do.")
+    else:
+        text = consult.get("unified_weave") or consult.get("trainingNotes") or user_text
+
+    scenes = [
+        {
+            "index": 1,
+            "description": text,
+            "visualPrompt": consult.get("unified_weave") or user_text,
+            "styleInfluence": f"King Wen router mode={mode}, dominant={dominant}, porosity={porosity_value:.3f}, trajectory={trajectory}",
+            "prosody": {
+                "chaos": vector["chaos"],
+                "whimsy": vector["whimsy"],
+                "darkTone": vector["darkTone"],
+                "coherence": vector["coherence"],
+            },
+            "voiceStatus": "ready" if mode == "chat" else "action",
+        }
+    ]
+
+    return {
+        "mode": mode,
+        "text": text,
+        "scenes": scenes,
+        "tool_hint": tool_hint,
+        "rule": rule,
+        "dominant": dominant,
+        "porosity": porosity_value,
+        "trajectory": trajectory,
+        "agree_temporal": agree,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -304,7 +505,8 @@ def oracle_speak(
 
     vector = _extract_vector(consult)
     hexagram_id = int(consult.get("hexagram_id") or 0)
-    text_spoken = _select_text(consult, user_text, text_source)
+    route = _kingwen_router(consult, user_text)
+    text_spoken = route["text"]
     speaker = _select_speaker(vector)
     dominant = _dominant_axis(vector)
     porosity = (
@@ -320,53 +522,93 @@ def oracle_speak(
     dsp_meta: Dict[str, Any] = {}
     headers: Dict[str, str] = {}
 
-    try:
-        audio_bytes, headers = _tts_worker_with_vector(
-            text_spoken,
-            vector,
-            porosity=porosity,
-            trajectory=trajectory,
-            agree_temporal=agree_temporal,
-            session_id=session_id,
-        )
-        backend = "kingwen-worker-tts"
-    except Exception as exc:
-        audio_bytes = None
-        dsp_meta = {"error": f"kingwen-worker-vector:{exc}"}
-
-    if not audio_bytes:
+    if route["mode"] == "chat":
         try:
-            synth = _synthesize(text_spoken, speaker, vector)
-            audio_bytes = synth.get("audio")
-            backend = synth.get("backend", "unknown")
-            headers = {}
-            dsp_meta = synth.get("error") or {}
+            audio_bytes, headers = _tts_worker_with_vector(
+                text_spoken,
+                vector,
+                porosity=porosity,
+                trajectory=trajectory,
+                agree_temporal=agree_temporal,
+                session_id=session_id,
+            )
+            backend = "kingwen-worker-tts"
         except Exception as exc:
-            return {
-                "audio_path": "",
-                "error": f"TTS synthesis failed: {exc}",
-                "hexagram_id": hexagram_id,
-                "hexagram_name": consult.get("hexagram_name", ""),
-                "phase_temporal": agree_temporal,
-                "trajectory": trajectory,
-                "text_spoken": text_spoken,
-                "backend": "none",
-                "dominant_axis": dominant,
-                "agree_temporal": agree_temporal,
-                "voice_vector": vector,
-                "porosity": porosity,
-                "compliance": "reject",
-                "violations": [],
-                "session_id": session_id,
-                "dsp_meta": {},
-            }
+            audio_bytes = None
+            dsp_meta = {"error": f"kingwen-worker-vector:{exc}"}
+
+        if not audio_bytes:
+            try:
+                synth = _synthesize(text_spoken, speaker, vector)
+                audio_bytes = synth.get("audio")
+                backend = synth.get("backend", "unknown")
+                headers = {}
+                dsp_meta = synth.get("error") or {}
+            except Exception as exc:
+                return {
+                    "audio_path": "",
+                    "error": f"TTS synthesis failed: {exc}",
+                    "hexagram_id": hexagram_id,
+                    "hexagram_name": consult.get("hexagram_name", ""),
+                    "phase_temporal": agree_temporal,
+                    "trajectory": trajectory,
+                    "text_spoken": text_spoken,
+                    "backend": "none",
+                    "dominant_axis": dominant,
+                    "agree_temporal": agree_temporal,
+                    "voice_vector": vector,
+                    "porosity": porosity,
+                    "compliance": "reject",
+                    "violations": [],
+                    "session_id": session_id,
+                    "mode": route["mode"],
+                    "tool_hint": route["tool_hint"],
+                    "rule": route["rule"],
+                    "scenes": route["scenes"],
+                    "dsp_meta": {},
+                }
+    else:
+        # do path: no artifact, action payload only
+        return {
+            "audio_path": "",
+            "hexagram_id": hexagram_id,
+            "hexagram_name": consult.get("hexagram_name", ""),
+            "phase_temporal": agree_temporal,
+            "trajectory": trajectory,
+            "text_spoken": text_spoken,
+            "backend": "none",
+            "dominant_axis": dominant,
+            "agree_temporal": agree_temporal,
+            "voice_vector": vector,
+            "porosity": porosity,
+            "compliance": "reject",
+            "violations": [],
+            "session_id": session_id,
+            "mode": route["mode"],
+            "tool_hint": route["tool_hint"],
+            "rule": route["rule"],
+            "scenes": route["scenes"],
+            "dsp_meta": {},
+        }
 
     if audio_bytes:
         try:
             from openjarvis.cli.audio_dsp import modulate_with_headers
 
-            audio_bytes, dsp_meta = modulate_with_headers(audio_bytes, headers)
-            backend = f"{backend}+dsp"
+            if _is_cloud_endpoint(_KINGWEN_TTS_URL):
+                compliance = headers.get("X-Kingwen-Compliance", "compliant")
+                if compliance == "reject":
+                    dsp_meta = {
+                        "error": "compliance=reject",
+                        "violations": (headers.get("X-Kingwen-Violations") or "").split(",") if headers.get("X-Kingwen-Violations") else [],
+                    }
+                    backend = f"{backend}+compliance-reject"
+                else:
+                    audio_bytes, dsp_meta = modulate_with_headers(audio_bytes, headers)
+                    backend = f"{backend}+dsp"
+            else:
+                audio_bytes, dsp_meta = modulate_with_headers(audio_bytes, headers)
+                backend = f"{backend}+dsp"
         except Exception as exc:
             dsp_meta = {"error": f"dsp:{exc}"}
 
@@ -398,6 +640,7 @@ def oracle_speak(
     violations = (headers.get("X-Kingwen-Violations") or "").split(",") if headers.get("X-Kingwen-Violations") else []
     result = {
         "audio_path": final_path,
+        "played": False,
         "hexagram_id": hexagram_id,
         "hexagram_name": consult.get("hexagram_name", ""),
         "phase_temporal": agree_temporal,
@@ -413,6 +656,10 @@ def oracle_speak(
         "session_id": session_id,
         "dsp_meta": dsp_meta,
     }
+    try:
+        result["played"] = _play_audio_path(final_path, porosity=porosity)
+    except Exception:
+        result["played"] = False
     _publish_kingwen_voice_event(result)
     return result
 
@@ -427,6 +674,10 @@ def _error_result(
     compliance: str = "reject",
     violations: Optional[list[str]] = None,
     session_id: str = "",
+    mode: str = "chat",
+    tool_hint: Optional[str] = None,
+    rule: str = "error",
+    scenes: Optional[list[dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     return {
         "audio_path": "",
@@ -445,6 +696,10 @@ def _error_result(
         "violations": violations or [],
         "session_id": session_id,
         "dsp_meta": {},
+        "mode": mode,
+        "tool_hint": tool_hint,
+        "rule": rule,
+        "scenes": scenes or [],
     }
 
 
@@ -483,6 +738,20 @@ def _publish_kingwen_voice_event(result: Dict[str, Any]) -> None:
 # Async wrapper — matches chat_cmd.py interface                               #
 # --------------------------------------------------------------------------- #
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="oracle-voice")
+
+
+def get_emotional_input(default: int = 50, minimum: int = 0, maximum: int = 100) -> int:
+    try:
+        raw = input("King Wen emotional_input (0-100) [50]: ").strip()
+    except EOFError:
+        return default
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        return default
+    return max(minimum, min(maximum, value))
 
 
 def oracle_speak_async(

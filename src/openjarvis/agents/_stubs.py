@@ -126,14 +126,15 @@ class BaseAgent(ABC):
                 {"agent": self.agent_id, "input": input},
             )
         self._emotion_text = input
-        self._emotion_input = 50
+        if not hasattr(self, "_emotion_input"):
+            self._emotion_input = 50
         provider = getattr(self, "_emotion_provider", None)
         if provider is not None and input:
             try:
                 payload = provider.consult(
                     text=input,
                     session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
-                    emotional_input=getattr(self, "_emotion_input", 50),
+                    emotional_input=getattr(self, "_emotion_input"),
                 )
                 self._kingwen_consult_payload = payload
                 preset = provider.voice_preset(
@@ -162,6 +163,25 @@ class BaseAgent(ABC):
                     or ((payload.get("emotional_deltas", {}) or {}).get("coherence", 1.0) < 0.25)
                     or ((payload.get("emotional_deltas", {}) or {}).get("voiceWeight", 1.0) < 0.35)
                 )
+                tongue_data = tongue or {}
+                porosity_value = float(tongue_data.get("porosity", 0.35))
+                self._current_porosity = porosity_value
+                self._current_emotional_input = getattr(self, "_emotion_input", 50)
+                if porosity_value < 0.3:
+                    self._kingwen_broadcast_mode = "whisper"
+                    self._agent_autonomy = 1.0
+                    self._memory_sync_interval = 10
+                    self._swarm_broadcast_enabled = False
+                elif porosity_value < 0.8:
+                    self._kingwen_broadcast_mode = "suggest"
+                    self._agent_autonomy = 0.7
+                    self._memory_sync_interval = 3
+                    self._swarm_broadcast_enabled = False
+                else:
+                    self._kingwen_broadcast_mode = "command"
+                    self._agent_autonomy = 0.3
+                    self._memory_sync_interval = 0
+                    self._swarm_broadcast_enabled = True
                 history = getattr(self, "_kingwen_history", None)
                 if history is not None:
                     history.append(
@@ -205,11 +225,86 @@ class BaseAgent(ABC):
             self._kingwen_voice_section = ""
 
     def _emit_turn_end(self, **data: Any) -> None:
-        """Publish ``AGENT_TURN_END`` if an event bus is available."""
+        """Publish ``AGENT_TURN_END`` and, when broadcast mode is active,
+        publish ``KINGWEN_CONSENSUS_UPDATE`` with real agent state captured
+        from the current turn."""
         if self._bus:
             payload: Dict[str, Any] = {"agent": self.agent_id}
             payload.update(data)
             self._bus.publish(EventType.AGENT_TURN_END, payload)
+            if self._swarm_broadcast_enabled:
+                history = getattr(self, "_kingwen_history", None)
+                latest = history[-1] if history else {}
+                ed = latest.get("emotional_deltas") or {}
+                tongue = latest.get("emotional_tongue") or {}
+                consensus_data = {
+                    "agent": self.agent_id,
+                    "hexagram_id": latest.get("hexagram_id"),
+                    "hexagram_name": latest.get("hexagram_name"),
+                    "phase_temporal": latest.get("phase_temporal"),
+                    "porosity": float(tongue.get("porosity", self._current_porosity or 0.35)),
+                    "voiceWeight": float(ed.get("voiceWeight", latest.get("voice_weight", 0.0) or 0.0)),
+                    "coherence": float(ed.get("coherence", latest.get("coherence", 0.0) or 0.0)),
+                    "chaos": float(ed.get("chaos", latest.get("chaos", 0.0) or 0.0)),
+                    "whimsy": float(ed.get("whimsy", latest.get("whimsy", 0.0) or 0.0)),
+                    "darkTone": float(ed.get("darkTone", latest.get("dark_tone", 0.0) or 0.0)),
+                    "trajectory": tongue.get("trajectory"),
+                    "training_weight_vectors": tongue.get("training_weight_vectors") or {},
+                    "emotional_tongue": tongue,
+                    "kingwen_broadcast_mode": getattr(self, "_kingwen_broadcast_mode", None),
+                    "agent_autonomy": float(getattr(self, "_agent_autonomy", 0.7)),
+                    "memory_sync_interval": float(getattr(self, "_memory_sync_interval", 3)),
+                    "swarm_broadcast_enabled": bool(getattr(self, "_swarm_broadcast_enabled", False)),
+                }
+                try:
+                    self._bus.publish(EventType.KINGWEN_CONSENSUS_UPDATE, consensus_data)
+                except Exception:
+                    pass
+                try:
+                    asyncio.get_running_loop()
+                    self._schedule_globe_broadcast(consensus_data)
+                except RuntimeError:
+                    pass
+
+    def _schedule_globe_broadcast(self, consensus_data: Dict[str, Any]) -> None:
+        limb = getattr(self, "_globe_limb", None)
+        if limb is None or not limb.available():
+            return
+        try:
+            envelope = GlobeConsensusEnvelope(
+                ts=time.time(),
+                session_id=getattr(self, "_kingwen_session_id", None),
+                agent=consensus_data.get("agent"),
+                hexagram_id=consensus_data.get("hexagram_id"),
+                hexagram_name=consensus_data.get("hexagram_name"),
+                phase_temporal=consensus_data.get("phase_temporal"),
+                porosity=consensus_data.get("porosity"),
+                voiceWeight=consensus_data.get("voiceWeight"),
+                coherence=consensus_data.get("coherence"),
+                chaos=consensus_data.get("chaos"),
+                whimsy=consensus_data.get("whimsy"),
+                darkTone=consensus_data.get("darkTone"),
+                trajectory=consensus_data.get("trajectory"),
+                broadcast_mode=consensus_data.get("kingwen_broadcast_mode"),
+                agent_autonomy=consensus_data.get("agent_autonomy"),
+                memory_sync_interval=consensus_data.get("memory_sync_interval"),
+                swarm_broadcast_enabled=consensus_data.get("swarm_broadcast_enabled"),
+                emotional_tongue=consensus_data.get("emotional_tongue") or {},
+                training_weight_vectors=consensus_data.get("training_weight_vectors") or {},
+            )
+        except Exception:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._fire_and_forget_globe(limb, envelope))
+        except RuntimeError:
+            pass
+
+    async def _fire_and_forget_globe(self, limb, envelope: GlobeConsensusEnvelope) -> None:
+        try:
+            await limb.broadcast(envelope)
+        except Exception:
+            pass
 
     def _apply_persona(self, system_prompt: Optional[str]) -> Optional[str]:
         """Append SOUL/MEMORY/USER persona to a self-assembled system prompt.
@@ -343,7 +438,7 @@ class BaseAgent(ABC):
             payload = provider.consult(
                 text=getattr(self, "_emotion_text", "") or "",
                 session_id=getattr(self, "_kingwen_session_id", "openjarvis"),
-                emotional_input=getattr(self, "_emotion_input", 50),
+                emotional_input=getattr(self, "_emotion_input"),
             )
             return type(
                 "KingWenEmotionPayload",

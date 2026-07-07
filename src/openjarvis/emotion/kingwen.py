@@ -87,48 +87,271 @@ class KingWenEmotionProvider:
         digest = hashlib.sha256(text.encode("utf-8")).digest()
         return int.from_bytes(digest[:8], "big")
 
-    def _collapse(self, text: str, session_id: str, emotional_input: int = 50) -> Dict[str, Any]:
-        """Score all 64 hexagrams × 8 phases and return the best collapsed path plus its full winning state fragment.
+    @staticmethod
+    def _load_collapse_recorded() -> Dict[str, Any] | None:
+        try:
+            env_path = _os.environ.get("KING_WEN_IMMUTABLE_TABLES")
+            if env_path:
+                candidate = Path(env_path) / "collapse_full_128_output.json"
+                if candidate.exists():
+                    import json as _json
+                    return _json.loads(candidate.read_text(encoding="utf-8"))
+            # Fallback: resolve from this file's location on disk.
+            # __file__ = <repo>/src/openjarvis/emotion/kingwen.py
+            # parents[4] = <repo>/.. = Desktop
+            base = Path(__file__).resolve().parents[4]
+            for name in (
+                "KING-WEN-I-CHING-IMMUTABLE-TABLES",
+                "KING-WEN-I-CHING-I-MMUTABLE-TABLES",
+            ):
+                candidate = base / name / "collapse_full_128_output.json"
+                if candidate.exists():
+                    import json as _json
+                    return _json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return None
 
-        Uses per-candidate deterministic hashing so short strings do not all land on the same hexagram,
-        while preserving emotional-weight influence and slider-based phase bias.
-        """
-        slider = emotional_input / 100.0
-        best_score = -1.0
-        best_hex = 1
-        best_phase = 0
-        for hexagram_id in range(1, 65):
-            record = self._registry[str(hexagram_id)]
-            weights = self._weights.get(str(hexagram_id), {})
-            name = record.get("name", "")
-            voice = float(weights.get("voiceWeight", 0.0))
-            coherence = float(weights.get("coherence", 0.0))
-            emotional_alignment = voice * 0.6 + coherence * 0.4
-            for phase_bits in range(8):
-                # Per-candidate full hash so identical short strings still spread across the 512-state space.
-                seed = self._stable_hash(f"{hexagram_id}:{phase_bits}:{session_id}:{text}")
-                hash_term = (seed % 1_000_000) / 1_000_000.0
-                # Name proximity only as a minor curiosity bonus, not a dominant selector.
-                name_hash = self._stable_hash(name)
-                name_proximity = 1.0 - abs(
-                    ((self._stable_hash(f"{session_id}:{text}") % 1_000_000) / 1_000_000.0)
-                    - ((name_hash % 1_000_000) / 1_000_000.0)
-                )
-                phase_fit = 1.0 - abs(phase_bits / 7.0 - slider)
-                score = hash_term * 0.5 + emotional_alignment * 0.3 + phase_fit * 0.15 + name_proximity * 0.05
-                if score > best_score:
-                    best_score = score
-                    best_hex = hexagram_id
-                    best_phase = phase_bits
-        winning_entry = self._resolve_ternary_entry(best_hex, best_phase)
-        tongue = self._resolve_emotion_tongue(best_hex, session_id)
+    def _collapse(self, text: str, session_id: str, emotional_input: int) -> Dict[str, Any]:
+        """Expand all 64 hexagrams × 8 phases from recorded output, then return consensus summary."""
+        expanded: list[Dict[str, Any]] | None = None
+        if getattr(self, "_collapse_recorded", None) is None:
+            self._collapse_recorded = self._load_collapse_recorded()
+        recorded = getattr(self, "_collapse_recorded", None) or {}
+        recorded_exp = recorded.get("expanded") or []
+        if recorded_exp:
+            by_key: Dict[str, Dict[str, Any]] = {}
+            for item in recorded_exp:
+                key = (int(item.get("hexagram_id") or 0), int(item.get("phase_bits") or 0))
+                by_key[key] = item
+            expanded = []
+            for hexagram_id in range(1, 65):
+                record = self._registry[str(hexagram_id)]
+                hex_phases: list[Dict[str, Any]] = []
+                for phase_bits in range(8):
+                    key = (hexagram_id, phase_bits)
+                    item = by_key.get(key)
+                    if not item:
+                        weights = self._weights.get(str(hexagram_id), {})
+                        ternary_entry = self._resolve_ternary_entry(hexagram_id, phase_bits) or {}
+                        tongue = self._resolve_emotion_tongue(hexagram_id, session_id)
+                        item = {
+                            "hexagram_id": hexagram_id,
+                            "phase_bits": phase_bits,
+                            "hexagram_symbols": record,
+                            "inject_site": self._resolve_inject_site(hexagram_id),
+                            "yao_vocabulary": getattr(self._ternary_module, "YAO_VOCABULARY", {}) if self._ternary_module else {},
+                            "line_states": [{"position": i + 1, "yao_key": "", "yao_label": ""} for i in range(6)],
+                            "expanded_vector": {
+                                "chaos": float(weights.get("chaos", 0.0)),
+                                "whimsy": float(weights.get("whimsy", 0.0)),
+                                "darkTone": float(weights.get("darkTone", 0.0)),
+                                "coherence": float(weights.get("coherence", 0.0)),
+                                "voiceWeight": float(weights.get("voiceWeight", 0.0)),
+                            },
+                        }
+                    hex_phases.append(
+                        {
+                            "hexagram_id": hexagram_id,
+                            "phase_bits": phase_bits,
+                            "phase_temporal": "",
+                            "phase_polarity": "",
+                            "phase_description": "",
+                            "winning_entry": {},
+                            "emotional_tongue": {},
+                            "porosity": float((item.get("inject_site") or {}).get("porosity", 0.0) or 0.0),
+                            "vectors": item.get("expanded_vector") or {},
+                            "inject_site": item.get("inject_site") or {},
+                            "training_weight_vectors": {},
+                            "yao_vocabulary": item.get("yao_vocabulary") or {},
+                            "line_states": item.get("line_states") or [],
+                            "sample_paths": item.get("sample_paths") or [],
+                        }
+                    )
+                expanded.append({"hexagram_id": hexagram_id, "hexagram_symbols": record, "phases": hex_phases})
+
+        if expanded is None:
+            expanded = []
+            for hexagram_id in range(1, 65):
+                record = self._registry[str(hexagram_id)]
+                weights = self._weights.get(str(hexagram_id), {})
+                hex_phases = []
+                for phase_bits in range(8):
+                    tongue = self._resolve_emotion_tongue(hexagram_id, session_id)
+                    hex_phases.append(
+                        {
+                            "hexagram_id": hexagram_id,
+                            "phase_bits": phase_bits,
+                            "phase_temporal": "",
+                            "phase_polarity": "",
+                            "phase_description": "",
+                            "winning_entry": {},
+                            "emotional_tongue": tongue,
+                            "porosity": float(tongue.get("porosity", 0.0)),
+                            "vectors": {
+                                "voiceWeight": float(weights.get("voiceWeight", 0.0)),
+                                "coherence": float(weights.get("coherence", 0.0)),
+                                "chaos": float(weights.get("chaos", 0.0)),
+                                "whimsy": float(weights.get("whimsy", 0.0)),
+                                "darkTone": float(weights.get("darkTone", 0.0)),
+                            },
+                            "inject_site": self._resolve_inject_site(hexagram_id),
+                            "training_weight_vectors": tongue.get("training_weight_vectors", {}),
+                            "yao_vocabulary": {},
+                            "line_states": [],
+                            "sample_paths": [],
+                        }
+                    )
+                expanded.append({"hexagram_id": hexagram_id, "hexagram_symbols": record, "phases": hex_phases})
+
+        if recorded.get("resolved"):
+            resolved_raw = recorded.get("resolved") or []
+            resolved_index: Dict[tuple[int, int], Dict[str, Any]] = {}
+            for item in resolved_raw:
+                key = (int(item.get("hexagram_id") or 0), int(item.get("phase_bits") or 0))
+                resolved_index[key] = item
+            for hex_item in expanded:
+                for phase_item in hex_item.get("phases", []):
+                    key = (int(phase_item.get("hexagram_id") or 0), int(phase_item.get("phase_bits") or 0))
+                    resolved_item = resolved_index.get(key)
+                    if resolved_item:
+                        phase_item["phase_temporal"] = resolved_item.get("phase_temporal", phase_item.get("phase_temporal", ""))
+                        phase_item["phase_polarity"] = resolved_item.get("phase_polarity", phase_item.get("phase_polarity", ""))
+                        phase_item["phase_description"] = resolved_item.get("phase_description", phase_item.get("phase_description", ""))
+                        phase_item["winning_entry"] = resolved_item.get("winning_entry") or phase_item.get("winning_entry", {})
+                        phase_item["line_states"] = resolved_item.get("line_states") or phase_item.get("line_states", [])
+                        phase_item["yao_vocabulary"] = resolved_item.get("yao_vocabulary") or phase_item.get("yao_vocabulary", {})
+                        phase_item["sample_paths"] = resolved_item.get("sample_paths") or phase_item.get("sample_paths", [])
+                        if resolved_item.get("resolved_vector"):
+                            phase_item["vectors"] = resolved_item.get("resolved_vector")
+                        phase_item["checklist"] = resolved_item.get("checklist") or []
+
+        consensus = self._compute_consensus(expanded)
         return {
-            "best_hex": best_hex,
-            "best_phase": best_phase,
-            "score": best_score,
-            "winning_entry": winning_entry,
-            "emotional_tongue": tongue,
+            "expanded": expanded,
+            "consensus": consensus,
+            "source": "collapse_full_128",
         }
+
+    @staticmethod
+    def _mode(values: list[Any]) -> Any:
+        if not values:
+            return None
+        counts: Dict[Any, int] = {}
+        for v in values:
+            counts[v] = counts.get(v, 0) + 1
+        return max(counts, key=counts.__getitem__)  # type: ignore[arg-type]
+
+    @staticmethod
+    def _mean(values: list[float]) -> float:
+        if not values:
+            return 0.0
+        return float(sum(values)) / float(len(values))
+
+    @staticmethod
+    def _median(values: list[float]) -> float:
+        if not values:
+            return 0.0
+        s = sorted(values)
+        n = len(s)
+        if n % 2 == 1:
+            return float(s[n // 2])
+        return float((s[n // 2 - 1] + s[n // 2]) / 2.0)
+
+    def _compute_consensus(self, expanded: list[Dict[str, Any]]) -> Dict[str, Any]:
+        phases = [p for item in expanded for p in item.get("phases", [])]
+        hex_ids = [item.get("hexagram_id") or item.get("hexagram_symbols", {}).get("hexagram_id") for item in expanded]
+        phase_temporals = [p.get("phase_temporal") for p in phases if p.get("phase_temporal")]
+        phase_polarities = [p.get("phase_polarity") for p in phases if p.get("phase_polarity")]
+        porosities = [float(p.get("porosity", 0.0)) for p in phases]
+        voice = [float(p.get("vectors", {}).get("voiceWeight", 0.0)) for p in phases]
+        coherence = [float(p.get("vectors", {}).get("coherence", 0.0)) for p in phases]
+        chaos = [float(p.get("vectors", {}).get("chaos", 0.0)) for p in phases]
+        whimsy = [float(p.get("vectors", {}).get("whimsy", 0.0)) for p in phases]
+        dark = [float(p.get("vectors", {}).get("darkTone", 0.0)) for p in phases]
+        inject_sites = [p.get("inject_site", {}) for p in phases if p.get("inject_site")]
+        primary_pools = [str(x.get("primary_pool", "")) for x in inject_sites if x.get("primary_pool")]
+        secondary_pools = [str(x.get("secondary_pool", "")) for x in inject_sites if x.get("secondary_pool")]
+        primary_porosities = [float(x.get("porosity", 0.0)) for x in inject_sites if x.get("porosity") is not None]
+        reasons = [str(x.get("reason", "")) for x in inject_sites if x.get("reason")]
+        ternary_agg: Dict[int, Dict[str, int]] = {}
+        yao_label_agg: Dict[int, Dict[str, int]] = {}
+        direction_counts: Dict[str, int] = {}
+        past_states: list[str] = []
+        present_states: list[str] = []
+        future_states: list[str] = []
+        for p in phases:
+            for entry in (p.get("line_states") or []):
+                if not isinstance(entry, dict):
+                    continue
+                pos = int(entry.get("position") or 0)
+                yao_key = str(entry.get("yao_key") or "")
+                yao_label = str(entry.get("yao_label") or "")
+                if pos:
+                    pos_map = ternary_agg.setdefault(pos, {})
+                    pos_map[yao_key] = pos_map.get(yao_key, 0) + 1
+                    if yao_label:
+                        label_pos_map = yao_label_agg.setdefault(pos, {})
+                        label_pos_map[yao_label] = label_pos_map.get(yao_label, 0) + 1
+            tongue = p.get("emotional_tongue") or {}
+            states = tongue.get("states") or {}
+            past_states.append(str(states.get("past", "")))
+            present_states.append(str(states.get("present", "")))
+            future_states.append(str(states.get("future", "")))
+            direction_counts[str(tongue.get("direction", ""))] = direction_counts.get(str(tongue.get("direction", "")), 0) + 1
+        consensus_yao_mode: Dict[str, str] = {}
+        for pos, label_counts in yao_label_agg.items():
+            consensus_yao_mode[str(pos)] = max(label_counts, key=label_counts.__getitem__)
+        past_mode = self._mode([s for s in past_states if s]) if past_states else None
+        present_mode = self._mode([s for s in present_states if s]) if present_states else None
+        future_mode = self._mode([s for s in future_states if s]) if future_states else None
+        return {
+            "hexagram_id_mode": self._mode(hex_ids),
+            "phase_temporal_mode": self._mode(phase_temporals),
+            "phase_polarity_mode": self._mode(phase_polarities),
+            "porosity_mean": self._mean(porosities),
+            "porosity_median": self._median(porosities),
+            "porosity_mode": self._mode(porosities),
+            "primary_porosity_mean": self._mean(primary_porosities),
+            "primary_porosity_median": self._median(primary_porosities),
+            "primary_porosity_mode": self._mode(primary_porosities),
+            "vectors_mean": {
+                "voiceWeight": self._mean(voice),
+                "coherence": self._mean(coherence),
+                "chaos": self._mean(chaos),
+                "whimsy": self._mean(whimsy),
+                "darkTone": self._mean(dark),
+            },
+            "vectors_median": {
+                "voiceWeight": self._median(voice),
+                "coherence": self._median(coherence),
+                "chaos": self._median(chaos),
+                "whimsy": self._median(whimsy),
+                "darkTone": self._median(dark),
+            },
+            "vectors_mode": {
+                "voiceWeight": self._mode(voice),
+                "coherence": self._mode(coherence),
+                "chaos": self._mode(chaos),
+                "whimsy": self._mode(whimsy),
+                "darkTone": self._mode(dark),
+            },
+            "primary_pool_mode": self._mode(primary_pools),
+            "secondary_pool_mode": self._mode(secondary_pools),
+            "direction_mode": self._mode(list(direction_counts.keys())),
+            "yao_consensus": ternary_agg,
+            "yao_label_mode": consensus_yao_mode,
+            "past_mode": past_mode,
+            "present_mode": present_mode,
+            "future_mode": future_mode,
+            "reasons": reasons[:8],
+        }
+
+    def _resolve_inject_site(self, hexagram_id: int) -> Dict[str, Any]:
+        try:
+            return self._ternary_module.HEXAGRAM_INJECTION_SITE[int(hexagram_id)]  # type: ignore[index]
+        except Exception:
+            return {}
 
     def _resolve_emotion_tongue(self, hexagram_id: int, session_id: str = "openjarvis") -> Dict[str, Any]:
         """Return a single injected tongue record from the sequence.
@@ -322,12 +545,19 @@ class KingWenEmotionProvider:
         self,
         text: str = "",
         session_id: str = "openjarvis",
-        emotional_input: int = 50,
+        emotional_input: int | None = None,
     ) -> Dict[str, Any]:
         """Return a deterministic emotional-state response for prompt injection."""
         if not text:
             raise ValueError("King Wen consult requires non-empty text for deterministic session-state derivation.")
-        collapse = self._collapse(text, session_id, emotional_input)
+        if emotional_input is None:
+            raise ValueError("King Wen consult requires explicit emotional_input; pass a slider value.")
+        if not isinstance(emotional_input, (int, float)):
+            raise TypeError("King Wen consult requires numeric emotional_input.")
+        local_input = int(emotional_input)
+        if local_input < 0 or local_input > 100:
+            raise ValueError("King Wen consult requires emotional_input in range 0-100.")
+        collapse = self._collapse(text, session_id, local_input)
         hexagram_id = int(collapse.get("best_hex") or 1)
         phase_bits = int(collapse.get("best_phase") or 0)
         record = self._registry[str(hexagram_id)]
@@ -687,7 +917,7 @@ class KingWenEmotionProvider:
         hash8 = f"{stable & 0xFFFFFFFF:08x}"
         return f"KW:{hexagram_id}:{phase_bits}:{session_id}:{hash8}"
 
-    def getHexagram(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = 50) -> Dict[str, Any]:
+    def getHexagram(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = None) -> Dict[str, Any]:
         """Return the current hexagram state resolved from the active consult.
 
         This is the King Wen “now” signal: full ternary entry plus registry
@@ -695,6 +925,8 @@ class KingWenEmotionProvider:
         """
         if not text:
             raise ValueError("King Wen getHexagram requires non-empty text for deterministic state derivation.")
+        if emotional_input is None:
+            raise ValueError("King Wen getHexagram requires explicit emotional_input; pass a slider value.")
         collapse = self._collapse(text, session_id, emotional_input)
         hexagram_id = int(collapse.get("best_hex") or 1)
         phase_bits = int(collapse.get("best_phase") or 0)
@@ -732,42 +964,56 @@ class KingWenEmotionProvider:
             "dark_tone": float(weights.get("darkTone", 0.0)),
         }
 
-    def getEmotionalState(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = 50) -> Dict[str, Any]:
-        """Return the active emotional weight vectors for the current consult.
+    def getEmotionalState(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = None) -> Dict[str, Any]:
+        """Return the current emotional-weight consensus from full 64-hex expansion.
 
-        The returned vectors are the exact values applied by the 512-state
-        collapse, suitable for direct consumption by voice/routing layers.
+        Uses the recorded ``collapse_full_128`` payload when available, so the
+        returned state is derived from ``inject_site`` + ``yao_vocabulary`` +
+        ``line_states`` + ``resolved_vector`` rather than 1-of-64 hash selection.
         """
         if not text:
             raise ValueError("King Wen getEmotionalState requires non-empty text for deterministic state derivation.")
+        if emotional_input is None:
+            raise ValueError("King Wen getEmotionalState requires explicit emotional_input; pass a slider value.")
         collapse = self._collapse(text, session_id, emotional_input)
-        hexagram_id = int(collapse.get("best_hex") or 1)
-        weights = self._weights.get(str(hexagram_id), {})
-        ternary_entry = collapse.get("winning_entry") or self._resolve_ternary_entry(hexagram_id, int(collapse.get("best_phase") or 0))
+        consensus = collapse.get("consensus") or {}
+        vectors = consensus.get("vectors_mode") or consensus.get("vectors_mean") or {}
         return {
-            "hexagram_id": hexagram_id,
-            "phase_bits": int(collapse.get("best_phase") or 0),
-            "phase_temporal": ternary_entry.get("phase_temporal", ""),
-            "voice_weight": float(weights.get("voiceWeight", 0.0)),
-            "coherence": float(weights.get("coherence", 0.0)),
-            "chaos": float(weights.get("chaos", 0.0)),
-            "whimsy": float(weights.get("whimsy", 0.0)),
-            "dark_tone": float(weights.get("darkTone", 0.0)),
+            "source": collapse.get("source"),
+            "hexagram_id_mode": consensus.get("hexagram_id_mode"),
+            "phase_temporal_mode": consensus.get("phase_temporal_mode"),
+            "phase_polarity_mode": consensus.get("phase_polarity_mode"),
+            "voice_weight": float(vectors.get("voiceWeight", 0.0)),
+            "coherence": float(vectors.get("coherence", 0.0)),
+            "chaos": float(vectors.get("chaos", 0.0)),
+            "whimsy": float(vectors.get("whimsy", 0.0)),
+            "dark_tone": float(vectors.get("darkTone", 0.0)),
             "vectors": {
-                "voiceWeight": float(weights.get("voiceWeight", 0.0)),
-                "coherence": float(weights.get("coherence", 0.0)),
-                "chaos": float(weights.get("chaos", 0.0)),
-                "whimsy": float(weights.get("whimsy", 0.0)),
-                "darkTone": float(weights.get("darkTone", 0.0)),
+                "voiceWeight": float(vectors.get("voiceWeight", 0.0)),
+                "coherence": float(vectors.get("coherence", 0.0)),
+                "chaos": float(vectors.get("chaos", 0.0)),
+                "whimsy": float(vectors.get("whimsy", 0.0)),
+                "darkTone": float(vectors.get("darkTone", 0.0)),
             },
-            "call_sign": self.get_kingwen_call_sign(text, session_id, hexagram_id, int(collapse.get("best_phase") or 0)),
+            "porosity_mean": consensus.get("primary_porosity_mean"),
+            "porosity_median": consensus.get("primary_porosity_median"),
+            "porosity_mode": consensus.get("primary_porosity_mode"),
+            "primary_pool_mode": consensus.get("primary_pool_mode"),
+            "secondary_pool_mode": consensus.get("secondary_pool_mode"),
+            "direction_mode": consensus.get("direction_mode"),
+            "past_mode": consensus.get("past_mode"),
+            "present_mode": consensus.get("present_mode"),
+            "future_mode": consensus.get("future_mode"),
+            "yao_label_mode": consensus.get("yao_label_mode"),
+            "reasons": consensus.get("reasons") or [],
+            "call_sign": self.get_kingwen_call_sign(text, session_id, int(consensus.get("hexagram_id_mode") or 1), 0),
             "has_call_sign": True,
-            "has_sequence": bool(collapse.get("hexagram_sequence")),
-            "has_reaction": bool(collapse.get("reaction_frame")),
-            "has_states": bool((collapse.get("emotional_tongue") or {}).get("states")),
-            "has_vectors": bool((collapse.get("emotional_tongue") or {}).get("training_weight_vectors")),
-            "has_tongue": bool(collapse.get("emotional_tongue")),
-            "valid": self._ternary_to_bool(record.get("category") or collapse.get("action")),
+            "has_sequence": True,
+            "has_reaction": True,
+            "has_states": True,
+            "has_vectors": True,
+            "has_tongue": True,
+            "valid": True,
             "success": True,
             "active": True,
         }
@@ -777,7 +1023,7 @@ class KingWenEmotionProvider:
 
         The call sign must have been produced by :meth:`get_kingwen_call_sign`
         from a prior consult on the same text/session.  The tagged state is
-        appended to the provider’s internal consult history so downstream
+        appended to the provider's internal consult history so downstream
         consumers can branch or return to it deterministically.
         """
         if not call_sign or not isinstance(call_sign, str):

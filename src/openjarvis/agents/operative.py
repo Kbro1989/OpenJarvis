@@ -350,6 +350,53 @@ class OperativeAgent(ToolUsingAgent):
     # ------------------------------------------------------------------ #
     # King Wen subconscious influence + guided tool-call layer
     # ------------------------------------------------------------------ #
+    def _build_kingwen_directional_lore(
+        self,
+        user_input_text: str,
+    ) -> str:
+        """Build a deterministic directional lore string from resolved King Wen state."""
+        history = getattr(self, "_kingwen_history", None)
+        if not history:
+            return ""
+        latest = history[-1]
+        states = ((latest.get("emotional_tongue") or {}).get("states") or {})
+        past_state = str(states.get("past", "") or "").strip()
+        present_state = str(states.get("present", "") or "").strip()
+        future_state = str(states.get("future", "") or "").strip()
+        hexagram_name = str(latest.get("hexagram_name", "") or "").strip()
+        action = str(latest.get("action", "") or "").strip()
+        category = str(latest.get("category", "") or "").strip()
+        trajectory = str(((latest.get("emotional_tongue") or {}).get("trajectory")) or "").strip()
+        voice_weight = float(latest.get("voice_weight", 0.0) or 0.0)
+        coherence = float(latest.get("coherence", 0.0) or 0.0)
+        chaos = float(latest.get("chaos", 0.0) or 0.0)
+        parts: list[str] = ["\n## King Wen Directional Lore"]
+        if past_state or present_state or future_state:
+            parts.append(
+                f"Temporal read — past={past_state or '—'}; present={present_state or '—'}; future={future_state or '—'}"
+            )
+        if hexagram_name:
+            parts.append(f"Resolved hexagram — {hexagram_name}; action frame={action or '—'}; category={category or '—'}")
+        if trajectory:
+            parts.append(f"Trajectory — {trajectory}")
+        lore_targets = []
+        if voice_weight >= 0.75 and coherence >= 0.7:
+            lore_targets.append("A strong voice with high coherence favors a single decisive path.")
+        elif voice_weight < 0.35 and chaos > 0.55:
+            lore_targets.append(
+                "The road is unstable; favor containment, verification, and small reversible steps."
+            )
+        if coherence >= 0.65:
+            lore_targets.append("Follow the strongest signal rather than averaging options.")
+        if chaos > 0.5:
+            lore_targets.append("Expect ambiguity; prefer explicit clarification over assumption.")
+        if not lore_targets:
+            lore_targets.append(
+                "Use this frame as directional context, not a command. Translate it against the user's intent."
+            )
+        parts.append("Lore translation — " + "; ".join(lore_targets))
+        return "\n".join(parts)
+
     def _build_kingwen_directive(self) -> str:
         """Build a deterministic directive block from King Wen history."""
         history = getattr(self, "_kingwen_history", None)
@@ -375,10 +422,20 @@ class OperativeAgent(ToolUsingAgent):
         if reaction:
             lines.append(f"- Reaction frame: {reaction}")
 
-        lines.append(
-            "After your first turn, allow this frame to bias tool selection; "
-            "if coherence is high, prefer one focused native tool call."
-        )
+        autonomy = float(getattr(self, "_agent_autonomy", 0.7))
+        if autonomy >= 0.9:
+            lines.append(
+                "This frame is advisory only; preserve user intent and prefer one focused tool call if coherence is high."
+            )
+        elif autonomy <= 0.4:
+            lines.append(
+                "Treat this frame as a directive: proceed methodically, even if multiple native tool calls are required."
+            )
+        else:
+            lines.append(
+                "After your first turn, allow this frame to bias tool selection; "
+                "if coherence is high, prefer one focused native tool call."
+            )
         return "\n".join(lines)
 
     def _update_kingwen_state_from_tools(

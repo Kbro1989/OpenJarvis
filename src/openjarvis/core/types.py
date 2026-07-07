@@ -207,6 +207,9 @@ class TelemetryRecord:
     emotional_deltas: Optional[Dict[str, float]] = None
     kingwen_training_notes: Optional[str] = None
     kingwen_session_id: Optional[str] = None
+    porosity_ratio: Optional[float] = None
+    void_dropper_pos: Optional[int] = None
+    quantum_collapse_delta: Optional[float] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -258,6 +261,9 @@ class TraceStep:
     voice_id: Optional[str] = None
     voice_speed: Optional[float] = None
     emotional_deltas: Optional[Dict[str, float]] = None
+    porosity_ratio: Optional[float] = None
+    void_dropper_pos: Optional[int] = None
+    quantum_collapse_delta: Optional[float] = None
 
 
 @dataclass(slots=True)

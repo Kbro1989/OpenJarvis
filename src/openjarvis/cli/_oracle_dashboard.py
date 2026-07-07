@@ -49,20 +49,21 @@ def render(result: Dict[str, Any]) -> str:
 
     lines = [
         "",
-        _color("\u2728 Oracle voice rendered", "bold cyan"),
+        _color("✨ Oracle voice rendered", "bold cyan"),
         _color("hexagram", "dim") + f"  {hexagram_id} {hexagram_name}",
         _color("temporal", "dim") + f"  phase={phase}  agree={agree}",
         _color("trajectory", "dim") + f"  {trajectory}",
         _color("voice", "dim") + f"  backend={backend}",
         _color("dominant", "dim") + f"  {dominant}",
         _color("porosity", "dim") + f"  {porosity}",
+        _color("broadcast", "dim") + f"  mode={result.get('kingwen_broadcast_mode', '?')}  autonomy={result.get('agent_autonomy')}  memory_sync={result.get('memory_sync_interval', '?')}s  swarm={result.get('swarm_broadcast_enabled')}",
         _color("vector", "dim") + "\n" + _format_vector(voice_vector),
         _color("audio", "dim") + f"  {audio_path}" if audio_path else "",
         _color("text", "dim") + f"  {text[:220]}",
         "",
     ]
 
-    return "\n".join(line for line in lines if line is not None)
+    return "\n".join(line for line in lines if line)
 
 
 __all__ = ["render"]

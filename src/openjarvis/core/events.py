@@ -81,6 +81,7 @@ class EventType(str, Enum):
     OPTIMIZE_RUN_END = "optimize_run_end"
     FEEDBACK_RECEIVED = "feedback_received"
     KINGWEN_VOICE_COMPLETE = "kingwen_voice_complete"
+    KINGWEN_CONSENSUS_UPDATE = "kingwen_consensus_update"
 
 
 @dataclass(slots=True)

@@ -147,6 +147,23 @@ def serve(
         except Exception as exc:
             logger.debug("Telemetry store init failed: %s", exc)
 
+    # King Wen swarm telemetry: real append-only persistence for broadcast state.
+    swarm_store = None
+    try:
+        from openjarvis.core.kingwen_swarm_store import KingwenSwarmStore
+
+        swarm_store = KingwenSwarmStore()
+
+        def _on_kingwen_consensus(event) -> None:
+            try:
+                swarm_store.append_event(event)
+            except Exception as exc:
+                logger.debug("Swarm store append failed: %s", exc)
+
+        bus.subscribe(EventType.KINGWEN_CONSENSUS_UPDATE, _on_kingwen_consensus)
+    except Exception as exc:
+        logger.debug("Swarm store init failed: %s", exc)
+
     # Select with the model we'll actually serve so an engine that can't
     # serve it (e.g. the cloud fallback without the matching provider key) is
     # skipped rather than chosen and failing per-request later (see #532).
