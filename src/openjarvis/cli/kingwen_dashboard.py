@@ -105,8 +105,9 @@ def render_kingwen_dashboard(
             hex_name = payload.get("hexagram_name", "?")
             phase = payload.get("phase_temporal", "")
             tongue = payload.get("emotional_tongue") or {}
-            vec = tongue.get("training_weight_vectors") or {}
-            porosity = tongue.get("porosity")
+            deltas = payload.get("emotional_deltas") or {}
+            vec = deltas or tongue.get("training_weight_vectors") or {}
+            porosity = deltas.get("porosity") or tongue.get("porosity")
             action = payload.get("action", "")
             category = payload.get("category", "")
             reaction = (payload.get("reaction_frame") or "")[:160]
