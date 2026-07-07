@@ -19,38 +19,31 @@ from openjarvis.cli.ask import _append_kingwen_block
 
 def _cmd_models(console: "Console", active_model: str, engine_name: str) -> None:
     """
-    /models — ModelRolodex display.
+    /models — ModelRolodex display (card-style, matching POG2_ModelRolodex_Workflow).
     Shows:
-      1. Live Ollama models + ternary router class (King Wen-conscious)
-      2. Task chain (query-type → preferred model order)
-      3. Cloudflare Worker endpoints from secrets store
+      1. Oracle state card + ternary router class
+      2. Live Ollama model cards with task-fit / ternary match markers
+      3. Task-chain cards (local + cloud), mirroring run_query.js/run_router.js
+      4. Cloudflare Worker endpoint cards
     """
-    from rich.table import Table
     from rich.panel import Panel
     from rich.rule import Rule
+    from rich.text import Text
 
     try:
         from openjarvis.secrets.store import (
-            CF_WORKERS, LOCAL_PORTS, MODEL_ROLODEX,
-            task_model_chain, ternary_model_class,
+            CF_WORKERS,
+            LOCAL_PORTS,
+            MODEL_ROLODEX,
+            task_model_chain,
+            ternary_model_class,
+            task_fit_for,
         )
     except ImportError as exc:
         console.print(f"[red]Secrets store unavailable:[/red] {exc}")
         return
 
-    # ── 1. Live Ollama models + ternary router class ───────────────────────
-    live_models: list = []
-    ollama_url = LOCAL_PORTS.get("ollama", {}).get("url", "http://localhost:11434")
-    try:
-        import urllib.request, json as _json
-        req = urllib.request.Request(f"{ollama_url}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=2) as resp:
-            data = _json.loads(resp.read())
-            live_models = [m["name"] for m in data.get("models", [])]
-    except Exception:
-        pass
-
-    # Current King Wen oracle state for ternary routing
+    # ── 1. Oracle state + ternary router ───────────────────────────────────
     kw_hex_cat = "boundary"
     kw_hex_action = "WAIT"
     try:
@@ -66,73 +59,94 @@ def _cmd_models(console: "Console", active_model: str, engine_name: str) -> None
     model_classes = MODEL_ROLODEX.get("model_classes", {})
     ternary_keywords = model_classes.get(ternary_class, [])
 
-    # Build live model table
-    mdl_table = Table(title="Live Ollama Models + Ternary Router", show_lines=False)
-    mdl_table.add_column("Model", style="cyan", no_wrap=True)
-    mdl_table.add_column("Class match", style="green")
-    mdl_table.add_column("Active", justify="center")
+    oracle_text = Text()
+    oracle_text.append("Hexagram category: ", style="dim")
+    oracle_text.append(kw_hex_cat, style="cyan")
+    oracle_text.append("  Action: ", style="dim")
+    oracle_text.append(kw_hex_action, style="cyan")
+    oracle_text.append("  Ternary class: ", style="dim")
+    oracle_text.append(ternary_class, style="green")
+    oracle_text.append("  Keywords: ", style="dim")
+    oracle_text.append(", ".join(ternary_keywords), style="green")
+    console.print(Panel(oracle_text, title="[bold]Oracle + Ternary Router[/bold]", expand=False))
+
+    # ── 2. Live Ollama models as cards ─────────────────────────────────────
+    live_models: list = []
+    ollama_url = LOCAL_PORTS.get("ollama", {}).get("url", "http://localhost:11434")
+    try:
+        import urllib.request, json as _json
+        req = urllib.request.Request(f"{ollama_url}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=2) as resp:
+            data = _json.loads(resp.read())
+            live_models = [m["name"] for m in data.get("models", [])]
+    except Exception:
+        pass
 
     if live_models:
         for m in live_models:
             matched_class = "—"
+            matched_task = "—"
             for cls_name, kws in model_classes.items():
                 if any(kw in m.lower() for kw in kws):
                     matched_class = cls_name
                     break
+            sample_query = f"Run a {ternary_class.lower()} King Wen task."
+            inferred_task = task_fit_for(sample_query)
+            task_chain = task_model_chain(inferred_task)
+            if m in task_chain:
+                idx = task_chain.index(m)
+                matched_task = f"P{idx + 1}"
             is_ternary_pick = any(kw in m.lower() for kw in ternary_keywords)
             is_active = "★" if m == active_model else ("◆" if is_ternary_pick else "")
-            mdl_table.add_row(m, matched_class, is_active)
+            model_text = Text()
+            model_text.append(m, style="cyan")
+            if is_active:
+                model_text.append(f"  {is_active}", style="yellow")
+            model_text.append("\nClass: ", style="dim")
+            model_text.append(matched_class, style="green")
+            model_text.append("  Task rank: ", style="dim")
+            model_text.append(matched_task, style="yellow")
+            console.print(Panel(model_text, expand=False))
     else:
-        mdl_table.add_row("[dim]Ollama offline or no models[/dim]", "—", "")
+        console.print(Panel("[dim]Ollama offline or no models[/dim]", title="[bold]Local Models[/bold]", expand=False))
 
-    console.print(mdl_table)
-    console.print(
-        f"[dim]Oracle: hex_cat=[cyan]{kw_hex_cat}[/cyan]  action=[cyan]{kw_hex_action}[/cyan]  "
-        f"→ ternary class=[green]{ternary_class}[/green]  "
-        f"keywords={ternary_keywords}[/dim]"
-    )
+    # ── 3. Task-chain cards (local + cloud) ─────────────────────────────────
+    console.print(Rule("Task Chains"))
 
-    # ── 2. Task chain ──────────────────────────────────────────────────────
-    console.print()
-    tc_table = Table(title="Task Chain (query type → model priority)", show_lines=False)
-    tc_table.add_column("Task", style="yellow", width=12)
-    tc_table.add_column("Priority 1", style="cyan")
-    tc_table.add_column("Priority 2", style="dim cyan")
-    tc_table.add_column("Priority 3", style="dim")
+    for title, chain_key in [("Local Ollama", "task_chain"), ("Cloud", "task_chain_openrouter")]:
+        chains = MODEL_ROLODEX.get(chain_key, {})
+        for task, chain in chains.items():
+            if not isinstance(chain, list):
+                continue
+            entries = []
+            for idx, m in enumerate(chain[:3], 1):
+                style = "green" if m in live_models else "dim"
+                entries.append(f"P{idx}: [{style}]{m}[/{style}]")
+            task_text = Text()
+            task_text.append(f"{task}: ", style="yellow")
+            task_text.append("  ".join(entries))
+            console.print(Panel(task_text, title=f"[bold]{title}[/bold]  ·  {task}", expand=False))
 
-    for task, chain in MODEL_ROLODEX.get("task_chain", {}).items():
-        def _avail(m: str) -> str:
-            return f"[green]{m}[/green]" if m in live_models else f"[dim]{m}[/dim]"
-        tc_table.add_row(
-            task,
-            _avail(chain[0]) if len(chain) > 0 else "—",
-            _avail(chain[1]) if len(chain) > 1 else "—",
-            _avail(chain[2]) if len(chain) > 2 else "—",
-        )
-
-    console.print(tc_table)
-
-    # ── 3. CF Worker endpoints (brief) ────────────────────────────────────
-    console.print()
-    cf_table = Table(title="Cloudflare Workers", show_lines=False)
-    cf_table.add_column("Worker", style="magenta", width=22)
-    cf_table.add_column("URL", style="blue")
-    cf_table.add_column("Status", justify="center")
-
-    status_style = {"live": "[green]live[/green]", "not_deployed": "[yellow]pending[/yellow]"}
+    # ── 4. CF Worker endpoint cards ─────────────────────────────────────────
+    console.print(Rule("Cloudflare Workers"))
     for name, w in CF_WORKERS.items():
+        worker_text = Text()
+        worker_text.append("URL: ", style="dim")
+        worker_text.append(w.get("base_url", ""), style="blue")
+        worker_text.append("\nStatus: ", style="dim")
         st = w.get("status", "unknown")
-        cf_table.add_row(
-            w.get("worker_name", name),
-            w.get("base_url", ""),
-            status_style.get(st, st),
-        )
+        worker_text.append(st, style="green" if st == "live" else "yellow")
+        endpoints = w.get("endpoints", {})
+        if endpoints:
+            worker_text.append("\nEndpoints:\n", style="dim")
+            for ep, val in endpoints.items():
+                worker_text.append(f"  {ep}: ", style="dim")
+                worker_text.append(val + "\n", style="cyan")
+        console.print(Panel(worker_text, title=f"[bold]{w.get('worker_name', name)}[/bold]", expand=False))
 
-    console.print(cf_table)
     console.print(
         f"[dim]Active session: engine=[cyan]{engine_name}[/cyan]  "
-        f"model=[cyan]{active_model}[/cyan]  "
-        f"ollama={ollama_url}[/dim]"
+        f"model=[cyan]{active_model}[/cyan]  ollama={ollama_url}[/dim]"
     )
 
 
