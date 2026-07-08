@@ -21,8 +21,7 @@ KING_WEN_PATH = Path(__file__).resolve().parents[4] / "KING-WEN-I-CHING-IMMUTABL
 sys.path.insert(0, str(KING_WEN_PATH))
 
 try:
-    from emotional_engine import expand_hexagram, sample_resolve, collapse_full_128
-    from KING_WEN_TABLES import HEXAGRAMS
+    from openjarvis.emotion.kingwen_engine_adapter import collapse_full_128, consult as kingwen_consult  # noqa: E402
     KING_WEN_AVAILABLE = True
 except ImportError as e:
     KING_WEN_AVAILABLE = False
@@ -33,68 +32,81 @@ def consult(query: str, context: str = "", emotional_input: int = 50) -> dict:
     if not KING_WEN_AVAILABLE:
         return {"error": f"King Wen unavailable: {_IMPORT_ERROR}"}
 
-    # Derive hexagram from query hash — same query always resolves to same hexagram
-    # (deterministic), but different emotional_inputs shift the porosity output.
-    query_hash = hash(query.lower().strip()) % 64
-    hexagram_id = (query_hash % 64) + 1
-    phase_bits = int(time.time()) % 8  # temporal phase — changes every ~7.5 minutes
+    collapse = collapse_full_128(emotional_input=emotional_input)
+    consensus = collapse.get("consensus", {}) or {}
+    expanded = collapse.get("expanded", []) or []
+    resolved = collapse.get("resolved", []) or []
 
-    resolved = sample_resolve(
-        hexagram_id,
-        phase_bits=phase_bits,
-        request_text=query,
-        emotional_input=emotional_input,
-    )
+    hexagram_id = consensus.get("consensus_hexagram_id")
+    hexagram_name = consensus.get("consensus_hexagram_name", "")
+    temporal = consensus.get("consensus_temporal") or "present"
+    porosity = consensus.get("consensus_porosity_mean")
+    vector = consensus.get("consensus_vector") or {}
+    intent = consensus.get("consensus_intent", "")
+    explanation = consensus.get("consensus_explanation", "")
+    yaolabel = consensus.get("consensus_yao", "stable_yao")
+    temporal_distribution = consensus.get("temporal_distribution", {})
 
-    hex_sym = resolved.get("hexagram_symbols", {})
-    inject = resolved.get("inject_site", {})
-    vec = resolved.get("resolved_vector", {})
-
-    # Derive tone_mode from the resolved vector
-    voice = vec.get("voiceWeight", 0.5)
-    coherence = vec.get("coherence", 0.5)
-    chaos = vec.get("chaos", 0.5)
-    whimsy = vec.get("whimsy", 0.5)
-
-    if voice > 0.7 and coherence > 0.65:
-        tone_mode = "authoritative"
-    elif whimsy > 0.65 and chaos > 0.55:
-        tone_mode = "exploratory"
-    elif coherence > 0.7:
-        tone_mode = "focused"
-    else:
-        tone_mode = "present"
-
-    action = hex_sym.get("action", "ADAPT")
-    category = hex_sym.get("category", "transformer")
-
-    # recommended_action: combines hexagram action with Oracle judgment
-    action_map = {
-        "ASSERT": "Proceed with confidence. The path is clear.",
-        "YIELD":  "Listen before acting. Let the situation speak first.",
-        "WAIT":   "Hold position. The timing is not yet right.",
-        "ADAPT":  "Stay flexible. The situation is in motion.",
-    }
-    recommended_action = action_map.get(action, "Proceed with awareness.")
+    hex_symbols = {}
+    if hexagram_id:
+        try:
+            hex_symbols = kingwen_consult(query, emotional_input=emotional_input)
+            hex_symbols = {
+                "unicode": hex_symbols.get("hexagram_symbol", ""),
+                "chinese": hex_symbols.get("hexagram_chinese", ""),
+                "pinyin": hex_symbols.get("hexagram_pinyin", ""),
+            }
+        except Exception:
+            pass
 
     return {
-        "hexagram_id": hexagram_id,
-        "hexagram_name": hex_sym.get("name", f"Hexagram {hexagram_id}"),
-        "hexagram_unicode": hex_sym.get("unicode", ""),
-        "hexagram_chinese": hex_sym.get("chinese", ""),
-        "hexagram_category": category,
-        "judgment": inject.get("reason", ""),
-        "porosity_ratio": round(float(inject.get("porosity", 0.35) or 0.35), 4),
-        "porosity_label": inject.get("porosity_label", "balanced"),
-        "void_dropper_pos": phase_bits,
-        "quantum_collapse_delta": round(abs(vec.get("voiceWeight", 0.5) - vec.get("chaos", 0.5)), 4),
-        "tone_mode": tone_mode,
-        "resolved_vector": {k: round(v, 4) for k, v in vec.items()},
-        "temporal": resolved.get("phase_temporal", "present"),
-        "recommended_action": recommended_action,
+        "hexagram_id": int(hexagram_id or 0),
+        "hexagram_name": hexagram_name or "",
+        "hexagram_symbol": hex_symbols.get("unicode", ""),
+        "hexagram_chinese": hex_symbols.get("chinese", ""),
+        "hexagram_pinyin": hex_symbols.get("pinyin", ""),
+        "consensus_hexagram_id": int(hexagram_id or 0),
+        "consensus_hexagram_name": hexagram_name or "",
+        "consensus_temporal": temporal,
+        "consensus_yao": yaolabel,
+        "consensus_porosity_mean": porosity,
+        "consensus_porosity_mode": consensus.get("consensus_porosity_mode"),
+        "consensus_vector": vector,
+        "consensus_intent": intent,
+        "consensus_explanation": explanation,
+        "temporal_distribution": temporal_distribution,
+        "porosity_ratio": round(float(porosity or 0.35), 4),
+        "resolved_vector": {k: round(v, 4) for k, v in vector.items()},
+        "temporal": temporal,
         "query": query,
+        "context": context,
+        "consensus_path": {
+            "total_expanded": len(collapse.get("expanded", []) or []),
+            "total_resolved": len(collapse.get("resolved", []) or []),
+            "emotional_input": emotional_input,
+        },
+        "crowd_hexagram_votes": [
+            {
+                "hexagram_id": item.get("hexagram_id"),
+                "hexagram_name": (item.get("hexagram_symbols") or {}).get("name", ""),
+                "hexagram_symbol": (item.get("hexagram_symbols") or {}).get("unicode", ""),
+                "category": (item.get("hexagram_symbols") or {}).get("category", ""),
+                "action": (item.get("hexagram_symbols") or {}).get("action", ""),
+                "expanded_vector": item.get("expanded_vector", {}),
+                "inject_site": item.get("inject_site", {}),
+                "line_states": item.get("line_states", []),
+                "phase_bits": item.get("phase_bits"),
+                "phase_temporal": (item.get("hexagram_symbols") or {}).get("name", ""),
+            }
+            for item in expanded[:64]
+        ],
+        "winning_hex_line_states": [
+            ls
+            for item in resolved
+            if int(item.get("hexagram_id") or 0) == int(hexagram_id or 0)
+            for ls in (item.get("line_states") or [])
+        ],
     }
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Oracle Bridge — King Wen consult")

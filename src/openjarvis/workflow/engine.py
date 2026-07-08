@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +15,11 @@ from openjarvis.workflow.types import (
     WorkflowResult,
     WorkflowStepResult,
 )
+
+try:
+    from openjarvis.tools.kingwen_consensus_tailer import KingWenConsensusTailer  # noqa: E402
+except ImportError:  # pragma: no cover
+    KingWenConsensusTailer = None  # type: ignore[misc,assignment]
 
 
 class WorkflowEngine:
@@ -31,10 +37,18 @@ class WorkflowEngine:
         bus: Optional[EventBus] = None,
         max_parallel: int = 4,
         default_node_timeout: int = 300,
+        consensus_log: Optional[str] = None,
+        consensus_offset_path: Optional[str] = None,
     ) -> None:
         self._bus = bus
         self._max_parallel = max_parallel
         self._default_node_timeout = default_node_timeout
+        self._consensus_tailer: Optional[Any] = None
+        if consensus_log and consensus_offset_path and KingWenConsensusTailer is not None:
+            self._consensus_tailer = KingWenConsensusTailer(
+                log_path=consensus_log,
+                offset_path=consensus_offset_path,
+            )
 
     def run(
         self,
@@ -136,6 +150,33 @@ class WorkflowEngine:
             total_duration_seconds=total,
         )
 
+    def _ingest_consensus_deltas(self) -> List[Dict[str, Any]]:
+        """Tail new KINGWEN_CONSENSUS_UPDATE events since last ingest.
+
+        Returns empty list if no tailer configured or no new events.
+        """
+        if self._consensus_tailer is None:
+            return []
+        return self._consensus_tailer.ingest_new_consensus()
+
+    def get_consensus_routing(self, node: WorkflowNode) -> Dict[str, Any]:
+        """Return routing hints from recent consensus deltas for a node.
+
+        Hints are derived from the most recent tailed events and exposed
+        without full recompute. Consumers can override node config with
+        ``consensus_vector`` and ``porosity`` hints if present.
+        """
+        deltas: List[Dict[str, Any]] = self._ingest_consensus_deltas()
+        if not deltas:
+            return {}
+        latest = deltas[-1]
+        payload = latest.get("payload", {}) if isinstance(latest, dict) else {}
+        return {
+            key: payload[key]
+            for key in ("consensus_vector", "porosity")
+            if key in payload
+        }
+
     def _execute_node(
         self,
         node: WorkflowNode,
@@ -150,6 +191,12 @@ class WorkflowEngine:
                 EventType.WORKFLOW_NODE_START,
                 {"node": node.id, "type": node.node_type.value},
             )
+
+        routing_hints: Dict[str, Any] = {}
+        if node.node_type in {NodeType.AGENT, NodeType.TOOL}:
+            routing_hints = self.get_consensus_routing(node)
+            if routing_hints:
+                ctx.setdefault("consensus_routing", {})[node.id] = routing_hints
 
         t0 = time.time()
         try:

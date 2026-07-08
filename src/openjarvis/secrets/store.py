@@ -583,3 +583,112 @@ def task_fit_for(query: str) -> str:
         if any(k in q for k in keywords):
             return task
     return "chat"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRICING TABLE — mirrors ModelRolodex.ts PRICING_TABLE exactly.
+# USD per 1M tokens (input, output). 0 = free / local.
+# Source of truth: model_catalog.py pricing_input / pricing_output fields.
+# ─────────────────────────────────────────────────────────────────────────────
+
+PRICING_TABLE: Dict[str, Dict[str, float]] = {
+    # Free / local
+    "ollama":                   {"input": 0.00,  "output": 0.00},
+    "cloudflare":               {"input": 0.00,  "output": 0.00},
+    "huggingface":              {"input": 0.00,  "output": 0.00},
+    # OpenAI
+    "gpt-4o":                   {"input": 2.50,  "output": 10.00},
+    "gpt-4o-mini":              {"input": 0.15,  "output": 0.60},
+    "gpt-5-mini":               {"input": 0.25,  "output": 2.00},
+    "gpt-5-mini-2025-08-07":    {"input": 0.25,  "output": 2.00},
+    # Anthropic
+    "claude-haiku-4-5":         {"input": 1.00,  "output": 5.00},
+    "claude-sonnet-4-20250514": {"input": 3.00,  "output": 15.00},
+    "claude-sonnet-4-6":        {"input": 3.00,  "output": 15.00},
+    "claude-opus-4-20250514":   {"input": 15.00, "output": 75.00},
+    "claude-opus-4-6":          {"input": 5.00,  "output": 25.00},
+    # Google
+    "gemini-2.5-flash":         {"input": 0.30,  "output": 2.50},
+    "gemini-2.5-pro":           {"input": 1.25,  "output": 10.00},
+    "gemini-3-flash":           {"input": 0.50,  "output": 3.00},
+    "gemini-3-pro":             {"input": 2.00,  "output": 12.00},
+    # MiniMax
+    "MiniMax-M2.7":             {"input": 0.30,  "output": 1.20},
+    "MiniMax-M2.7-highspeed":   {"input": 0.60,  "output": 2.40},
+    "MiniMax-M2.5":             {"input": 0.30,  "output": 1.20},
+    "MiniMax-M2.5-highspeed":   {"input": 0.60,  "output": 2.40},
+    # Fireworks
+    "fireworks":                {"input": 0.20,  "output": 0.80},
+    # OpenRouter (meta-provider — use underlying model price, fallback)
+    "openrouter":               {"input": 0.50,  "output": 1.50},
+}
+
+# Cheapest non-zero input price across known providers — used as normaliser
+_CHEAPEST_INPUT: float = 0.15   # gpt-4o-mini
+
+
+def model_price(model_id: str) -> Dict[str, float]:
+    """
+    Return {"input": $/M, "output": $/M} for a model ID.
+    Matches exact key first, then substring. Returns 0/0 for local/unknown.
+    """
+    if model_id in PRICING_TABLE:
+        return PRICING_TABLE[model_id]
+    for key, prices in PRICING_TABLE.items():
+        if key and key in model_id:
+            return prices
+    return {"input": 0.0, "output": 0.0}
+
+
+def value_score(
+    model_id: str,
+    reputation: float = 1.0,
+    avg_latency_ms: float = 500.0,
+) -> float:
+    """
+    Best-for-money composite score — mirrors ModelRolodex.ts computeReputation()
+    with cost-efficiency factor added.
+
+      score = (reputation * 0.50)
+            + (latency_factor * 0.25)
+            + (cost_efficiency * 0.20)
+            + 0.05
+
+    Free/local models: cost_efficiency = 1.0  → score ≈ 0.95+
+    $0.15/M model:     cost_efficiency = 1.0  → top cloud pick
+    $15/M model:       cost_efficiency = 0.01 → heavy penalty
+
+    Returns float in [0.05, 1.25].
+    """
+    latency_factor = max(0.0, 1.0 - (avg_latency_ms / 5000.0))
+    input_cost = model_price(model_id)["input"]
+
+    if input_cost == 0.0:
+        cost_efficiency = 1.0
+    else:
+        cost_efficiency = max(0.05, min(1.0, _CHEAPEST_INPUT / input_cost))
+
+    return (
+        (reputation * 0.50)
+        + (latency_factor * 0.25)
+        + (cost_efficiency * 0.20)
+        + 0.05
+    )
+
+
+def best_value_model(
+    model_ids: list,
+    reputations: Optional[Dict[str, float]] = None,
+) -> str:
+    """
+    Pick the highest value_score model from a list.
+    `reputations`: optional dict of {model_id: float}.  Defaults to 1.0.
+    Returns empty string if list is empty.
+    """
+    reps = reputations or {}
+    scored = sorted(
+        model_ids,
+        key=lambda m: value_score(m, reputation=reps.get(m, 1.0)),
+        reverse=True,
+    )
+    return scored[0] if scored else ""
