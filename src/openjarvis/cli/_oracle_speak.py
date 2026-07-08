@@ -503,8 +503,67 @@ def oracle_speak(
             consult["error"], user_text, text_source, consult.get("hexagram_id")
         )
 
+    # ------------------------------------------------------------------
+    # Upgrade: use local 512-state collapse consensus as the primary
+    # deliberative source. The worker remains the audio/TTS endpoint.
+    # ------------------------------------------------------------------
+    local_consult: Dict[str, Any] = {}
+    try:
+        from openjarvis.emotion.kingwen_engine_adapter import consult as local_consult  # noqa: E402
+
+        local_consult = local_consult(
+            user_text,
+            session_id=session_id,
+            emotional_input=emotional_input,
+        )
+    except Exception:
+        local_consult = {}
+
+    if local_consult:
+        consult.setdefault("_local_consensus", local_consult)
+        consult["hexagram_id"] = local_consult.get("hexagram_id") or consult.get("hexagram_id") or 0
+        consult["hexagram_name"] = local_consult.get("hexagram_name") or consult.get("hexagram_name") or ""
+        consult["phase_temporal"] = local_consult.get("phase_temporal") or consult.get("phase_temporal") or "present"
+        consult["agree_temporal"] = local_consult.get("agree_temporal") or consult.get("agree_temporal") or consult.get("phase_temporal") or "present"
+        consult["trajectory"] = local_consult.get("trajectory") or consult.get("trajectory") or "still"
+        consult["action"] = local_consult.get("action") or consult.get("action") or ""
+        consult["category"] = local_consult.get("category") or consult.get("category") or ""
+        consult["reaction_frame"] = local_consult.get("reaction_frame") or consult.get("reaction_frame") or ""
+        consult["emotional_deltas"] = local_consult.get("emotional_deltas") or consult.get("emotional_deltas") or {}
+        consult["unified_weave"] = local_consult.get("unified_weave") or consult.get("unified_weave") or ""
+        consult["trainingNotes"] = local_consult.get("trainingNotes") or consult.get("trainingNotes") or ""
+        consult["consensus_hexagram_id"] = local_consult.get("consensus_hexagram_id")
+        consult["consensus_hexagram_name"] = local_consult.get("consensus_hexagram_name")
+        consult["consensus_temporal"] = local_consult.get("consensus_temporal")
+        consult["consensus_yao"] = local_consult.get("consensus_yao")
+        consult["consensus_porosity_mean"] = local_consult.get("consensus_porosity_mean")
+        consult["consensus_porosity_mode"] = local_consult.get("consensus_porosity_mode")
+        consult["consensus_vector"] = local_consult.get("consensus_vector")
+        consult["consensus_intent"] = local_consult.get("consensus_intent")
+        consult["consensus_explanation"] = local_consult.get("consensus_explanation")
+        consult["temporal_distribution"] = local_consult.get("temporal_distribution")
+        consult["emotional_input"] = local_consult.get("emotional_input", emotional_input)
+        tongue = consult.get("emotional_tongue") or {}
+        if isinstance(tongue, dict):
+            tongue["porosity"] = local_consult.get("consensus_porosity_mean")
+            tongue["training_weight_vectors"] = local_consult.get("consensus_vector") or tongue.get("training_weight_vectors") or {}
+        else:
+            consult["emotional_tongue"] = {
+                "porosity": local_consult.get("consensus_porosity_mean"),
+                "training_weight_vectors": local_consult.get("consensus_vector") or {},
+            }
+
     vector = _extract_vector(consult)
     hexagram_id = int(consult.get("hexagram_id") or 0)
+    if not hexagram_id:
+        try:
+            hexagram_id = int(
+                consult.get("consensus_hexagram_id")
+                or consult.get("_local_consensus", {}).get("consensus_hexagram_id")
+                or 0
+            )
+        except (TypeError, ValueError):
+            hexagram_id = 0
     route = _kingwen_router(consult, user_text)
     text_spoken = route["text"]
     speaker = _select_speaker(vector)
@@ -655,6 +714,10 @@ def oracle_speak(
         "violations": violations,
         "session_id": session_id,
         "dsp_meta": dsp_meta,
+        "mode": route.get("mode"),
+        "tool_hint": route.get("tool_hint"),
+        "rule": route.get("rule"),
+        "scenes": route.get("scenes"),
     }
     try:
         result["played"] = _play_audio_path(final_path, porosity=porosity)

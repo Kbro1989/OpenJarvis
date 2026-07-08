@@ -79,27 +79,60 @@ temporal_shift = _TemporalModule.BASE_PHASE_SHIFTS
 
 
 def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: int = 50) -> Dict[str, Any]:
-    """Deterministic consult entrypoint matching Desktop workflow + worker contract."""
-    payload = expand_hexagram(
-        hexagram_id=1,
-        request_text=text,
-        phase_bits=0,
-        emotional_input=emotional_input,
-    )
+    """Deterministic consult entrypoint backed by local 512-state collapse consensus."""
+    try:
+        collapse = collapse_full_128(emotional_input=emotional_input)
+        consensus = collapse.get("consensus", {}) or {}
+    except Exception:
+        consensus = {}
+
+    hexagram_id = consensus.get("consensus_hexagram_id")
+    hexagram_name = consensus.get("consensus_hexagram_name", "")
+    temporal = consensus.get("consensus_temporal") or "present"
+    porosity = consensus.get("consensus_porosity_mean")
+    vector = consensus.get("consensus_vector") or {}
+    intent = consensus.get("consensus_intent", "")
+    explanation = consensus.get("consensus_explanation", "")
+    yaolabel = consensus.get("consensus_yao", "stable_yao")
+    temporal_distribution = consensus.get("temporal_distribution", {})
+
+    trajectory = "still"
+    if temporal in {"transition", "dissolution"}:
+        trajectory = "diverging"
+    elif temporal in {"resolution", "crystallization"}:
+        trajectory = "converging"
+
+    hex_symbols = HEXAGRAM_BASE.get(int(hexagram_id or 1), {})
     return {
-        "hexagram_id": payload["hexagram_id"],
-        "hexagram_name": payload["hexagram_symbols"]["name"],
-        "phase_temporal": PHASE_INFO[0]["temporal"],
-        "action": payload["hexagram_symbols"]["action"],
-        "category": payload["hexagram_symbols"]["category"],
-        "reaction_frame": payload["inject_site"].get("reason", ""),
-        "emotional_deltas": payload["expanded_vector"],
+        "hexagram_id": int(hexagram_id or 0),
+        "hexagram_name": hexagram_name or hex_symbols.get("name", ""),
+        "phase_temporal": temporal,
+        "agree_temporal": temporal,
+        "trajectory": trajectory,
+        "action": hex_symbols.get("action", ""),
+        "category": hex_symbols.get("category", ""),
+        "reaction_frame": explanation,
+        "emotional_deltas": vector,
         "emotional_tongue": {
-            "porosity": payload["inject_site"].get("porosity"),
-            "training_weight_vectors": payload["expanded_vector"],
+            "porosity": porosity,
+            "training_weight_vectors": vector,
         },
-        "unified_weave": payload["inject_site"].get("reason", ""),
+        "unified_weave": explanation,
+        "trainingNotes": intent,
+        "consensus_hexagram_id": int(hexagram_id or 0),
+        "consensus_hexagram_name": hexagram_name or hex_symbols.get("name", ""),
+        "consensus_temporal": temporal,
+        "consensus_yao": yaolabel,
+        "consensus_porosity_mean": porosity,
+        "consensus_porosity_mode": consensus.get("consensus_porosity_mode"),
+        "consensus_vector": vector,
+        "consensus_intent": intent,
+        "consensus_explanation": explanation,
+        "temporal_distribution": temporal_distribution,
         "source": "kingwen-immutable-tables",
+        "session_id": session_id,
+        "text": text,
+        "emotional_input": emotional_input,
     }
 
 
