@@ -413,6 +413,7 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
             "description": text,
             "visualPrompt": consult.get("unified_weave") or user_text,
             "styleInfluence": f"King Wen router mode={mode}, dominant={dominant}, porosity={porosity_value:.3f}, trajectory={trajectory}",
+            "hexagram_color": consult.get("hexagram_color"),
             "prosody": {
                 "chaos": vector["chaos"],
                 "whimsy": vector["whimsy"],
@@ -543,6 +544,11 @@ def oracle_speak(
         consult["consensus_explanation"] = local_consult.get("consensus_explanation")
         consult["temporal_distribution"] = local_consult.get("temporal_distribution")
         consult["emotional_input"] = local_consult.get("emotional_input", emotional_input)
+        consult["hexagram_color"] = local_consult.get("hexagram_color") or consult.get("hexagram_color") or _hexagram_color(
+            int(consult.get("hexagram_id") or 0),
+            chinese_text=local_consult.get("hexagram_chinese"),
+            unicode_symbol_text=local_consult.get("hexagram_symbol"),
+        )
         tongue = consult.get("emotional_tongue") or {}
         if isinstance(tongue, dict):
             tongue["porosity"] = local_consult.get("consensus_porosity_mean")

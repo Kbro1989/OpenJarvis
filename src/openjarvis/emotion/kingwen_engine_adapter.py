@@ -78,6 +78,39 @@ _TemporalSpec.loader.exec_module(_TemporalModule)
 temporal_shift = _TemporalModule.BASE_PHASE_SHIFTS
 
 
+def _hexagram_color(hexagram_id: int, *, chinese_text: str = "", unicode_symbol_text: str = "", chinese_symbol: str = "", unicode_symbol: str = "") -> str:
+    """Deterministic color tied to the actual glyph or canonical text.
+
+    Accepts raw string fields or nested dict/list payloads by extracting
+    the first string value when needed.
+    """
+
+    def _first_str(*vals: object) -> str:
+        for v in vals:
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+            if isinstance(v, dict):
+                for val in v.values():
+                    s = _first_str(val)
+                    if s:
+                        return s
+            if isinstance(v, (list, tuple)):
+                for item in v:
+                    s = _first_str(item)
+                    if s:
+                        return s
+        return ""
+
+    seed = (
+        chinese_symbol
+        or chinese_text
+        or unicode_symbol
+        or unicode_symbol_text
+        or f"hex-{hexagram_id}"
+    )
+    return f"hsl({float(abs(hash(seed)) % 360)}, 72%, 54%)"
+
+
 def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: int = 50, include_crowd_votes: bool = False) -> Dict[str, Any]:
     """Deterministic consult entrypoint backed by local 512-state collapse consensus.
 
@@ -116,6 +149,11 @@ def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: 
         "hexagram_id": int(hexagram_id or 0),
         "hexagram_name": hexagram_name or hex_symbols.get("name", ""),
         "hexagram_symbol": hex_symbols.get("unicode", ""),
+        "hexagram_color": _hexagram_color(
+            int(hexagram_id or 0),
+            chinese_text=hex_symbols.get("chinese", ""),
+            unicode_symbol_text=hex_symbols.get("unicode", ""),
+        ),
         "phase_temporal": temporal,
         "agree_temporal": temporal,
         "trajectory": trajectory,

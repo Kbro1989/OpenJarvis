@@ -21,7 +21,7 @@ KING_WEN_PATH = Path(__file__).resolve().parents[4] / "KING-WEN-I-CHING-IMMUTABL
 sys.path.insert(0, str(KING_WEN_PATH))
 
 try:
-    from openjarvis.emotion.kingwen_engine_adapter import collapse_full_128, consult as kingwen_consult  # noqa: E402
+    from openjarvis.emotion.kingwen_engine_adapter import collapse_full_128, consult as kingwen_consult, _hexagram_color  # noqa: E402
     KING_WEN_AVAILABLE = True
 except ImportError as e:
     KING_WEN_AVAILABLE = False
@@ -65,6 +65,7 @@ def consult(query: str, context: str = "", emotional_input: int = 50) -> dict:
         "hexagram_symbol": hex_symbols.get("unicode", ""),
         "hexagram_chinese": hex_symbols.get("chinese", ""),
         "hexagram_pinyin": hex_symbols.get("pinyin", ""),
+        "hexagram_color": _hexagram_color(int(hexagram_id or 0)),
         "consensus_hexagram_id": int(hexagram_id or 0),
         "consensus_hexagram_name": hexagram_name or "",
         "consensus_temporal": temporal,
