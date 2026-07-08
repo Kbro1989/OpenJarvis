@@ -78,13 +78,22 @@ _TemporalSpec.loader.exec_module(_TemporalModule)
 temporal_shift = _TemporalModule.BASE_PHASE_SHIFTS
 
 
-def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: int = 50) -> Dict[str, Any]:
-    """Deterministic consult entrypoint backed by local 512-state collapse consensus."""
+def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: int = 50, include_crowd_votes: bool = False) -> Dict[str, Any]:
+    """Deterministic consult entrypoint backed by local 512-state collapse consensus.
+
+    Returns the consensus winner as the primary deliberative output, plus
+    optional crowd vote data showing how each of the 64 hexagrams
+    participated in the resolution.
+    """
     try:
         collapse = collapse_full_128(emotional_input=emotional_input)
         consensus = collapse.get("consensus", {}) or {}
+        expanded = collapse.get("expanded", []) or []
+        resolved = collapse.get("resolved", []) or []
     except Exception:
         consensus = {}
+        expanded = []
+        resolved = []
 
     hexagram_id = consensus.get("consensus_hexagram_id")
     hexagram_name = consensus.get("consensus_hexagram_name", "")
@@ -103,9 +112,12 @@ def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: 
         trajectory = "converging"
 
     hex_symbols = HEXAGRAM_BASE.get(int(hexagram_id or 1), {})
-    return {
+    result: Dict[str, Any] = {
         "hexagram_id": int(hexagram_id or 0),
         "hexagram_name": hexagram_name or hex_symbols.get("name", ""),
+        "hexagram_symbol": hex_symbols.get("unicode", ""),
+        "hexagram_chinese": hex_symbols.get("chinese", ""),
+        "hexagram_pinyin": hex_symbols.get("pinyin", ""),
         "phase_temporal": temporal,
         "agree_temporal": temporal,
         "trajectory": trajectory,
@@ -116,11 +128,14 @@ def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: 
         "emotional_tongue": {
             "porosity": porosity,
             "training_weight_vectors": vector,
+            "yao_vocabulary": YAO_VOCABULARY[0] if isinstance(YAO_VOCABULARY, list) else YAO_VOCABULARY,
         },
         "unified_weave": explanation,
         "trainingNotes": intent,
         "consensus_hexagram_id": int(hexagram_id or 0),
         "consensus_hexagram_name": hexagram_name or hex_symbols.get("name", ""),
+        "consensus_hexagram_symbol": hex_symbols.get("unicode", ""),
+        "consensus_hexagram_chinese": hex_symbols.get("chinese", ""),
         "consensus_temporal": temporal,
         "consensus_yao": yaolabel,
         "consensus_porosity_mean": porosity,
@@ -129,11 +144,47 @@ def consult(text: str = "", *, session_id: str = "openjarvis", emotional_input: 
         "consensus_intent": intent,
         "consensus_explanation": explanation,
         "temporal_distribution": temporal_distribution,
+        "consensus_path": {
+            "total_expanded": len(expanded),
+            "total_resolved": len(resolved),
+            "emotional_input": emotional_input,
+        },
         "source": "kingwen-immutable-tables",
         "session_id": session_id,
         "text": text,
         "emotional_input": emotional_input,
     }
+
+    if include_crowd_votes and expanded:
+        crowd_hexagram_votes = []
+        for item in expanded:
+            h_id = int(item.get("hexagram_id") or 0)
+            symbols = item.get("hexagram_symbols") or HEXAGRAM_BASE.get(h_id, {})
+            crowd_hexagram_votes.append({
+                "hexagram_id": h_id,
+                "hexagram_name": symbols.get("name", ""),
+                "hexagram_symbol": symbols.get("unicode", ""),
+                "hexagram_chinese": symbols.get("chinese", ""),
+                "hexagram_pinyin": symbols.get("pinyin", ""),
+                "category": symbols.get("category", ""),
+                "action": symbols.get("action", ""),
+                "expanded_vector": item.get("expanded_vector", {}),
+                "inject_site": item.get("inject_site", {}),
+                "line_states": item.get("line_states", []),
+                "phase_bits": item.get("phase_bits"),
+                "phase_temporal": PHASE_INFO.get(item.get("phase_bits", 0), {}).get("temporal", ""),
+            })
+        result["crowd_hexagram_votes"] = crowd_hexagram_votes
+
+        winning_line_states = []
+        for item in resolved:
+            if int(item.get("hexagram_id") or 0) == hexagram_id:
+                ls = item.get("line_states") or []
+                if isinstance(ls, list):
+                    winning_line_states.extend(ls)
+        result["winning_hex_line_states"] = winning_line_states
+
+    return result
 
 
 __all__ = [
