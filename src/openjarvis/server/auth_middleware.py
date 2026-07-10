@@ -33,7 +33,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     status_code=401,
                 )
             scheme, _, token = auth.partition(" ")
-            # Constant-time comparison to avoid leaking the key via timing.
             if scheme.lower() != "bearer" or not secrets.compare_digest(
                 token, self._api_key
             ):

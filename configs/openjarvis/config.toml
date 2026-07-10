@@ -1,17 +1,17 @@
-# OpenJarvis configuration — GLM-4.7-Flash eval on 8x A100-80GB
+# OpenJarvis configuration — primary runtime aligned to Hermes StepFun/Nous path
 
 # ═══════════════════════════════════════════════════════════════
 # PILLAR 1: Intelligence — The Model
 # ═══════════════════════════════════════════════════════════════
 [intelligence]
-default_model = "zai-org/GLM-4.7-Flash"   # HuggingFace model ID
-fallback_model = "glm-4.7-flash"          # Catalog alias fallback
-preferred_engine = "vllm"                 # MoE model, vLLM is best for A100s
-provider = "local"                        # Running locally on this machine
-quantization = "none"                     # Full precision, we have 640GB VRAM
-# Generation defaults for eval
-temperature = 0.0                         # Deterministic for reproducibility
-max_tokens = 2048                         # Standard eval output length
+default_model = "stepfun/step-3.7-flash:free"   # Hermes primary, served via Nous portal
+fallback_model = "qwen3.6:27b"                  # Local fallback
+preferred_engine = "nous"                       # Use Nous portal by default
+provider = "nous"                              # Hermes-aligned provider
+quantization = "none"
+# Generation defaults
+temperature = 0.7
+max_tokens = 1024
 top_p = 0.9
 top_k = 40
 repetition_penalty = 1.0

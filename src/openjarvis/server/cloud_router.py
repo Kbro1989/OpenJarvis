@@ -7,10 +7,9 @@ httpx directly so no cloud SDK packages are required.
 
 from __future__ import annotations
 
-import json
 import os
-from collections.abc import AsyncIterator
-from typing import Any, Sequence
+from collections.abc import AsyncIterator, Sequence
+from typing import Any
 
 import httpx
 
@@ -27,6 +26,7 @@ _OPENAI_PREFIXES = ("gpt-", "o1-", "o3-", "o4-", "chatgpt-")
 _ANTHROPIC_PREFIXES = ("claude-",)
 _GOOGLE_PREFIXES = ("gemini-",)
 _MINIMAX_PREFIXES = ("MiniMax-",)
+_STEPFUN_PREFIXES = ("stepfun/",)
 
 # HuggingFace orgs that host local-only quantised models — never route to cloud.
 _LOCAL_HF_ORGS = (
@@ -40,14 +40,12 @@ _LOCAL_HF_ORGS = (
 def _load_keys() -> dict[str, str]:
     """Read available cloud keys every call so live updates are picked up."""
     keys: dict[str, str] = {}
-    # File first, then fall back to process environment
     if _CLOUD_ENV_FILE.exists():
         for raw in _CLOUD_ENV_FILE.read_text().splitlines():
             line = raw.strip()
             if line and not line.startswith("#") and "=" in line:
                 k, v = line.split("=", 1)
                 keys[k.strip()] = v.strip()
-    # Process env can override (e.g. during testing)
     for name in (
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
@@ -55,6 +53,7 @@ def _load_keys() -> dict[str, str]:
         "GOOGLE_API_KEY",
         "OPENROUTER_API_KEY",
         "MINIMAX_API_KEY",
+        "STEPFUN_API_KEY",
     ):
         val = os.environ.get(name)
         if val:
@@ -72,9 +71,11 @@ def get_provider(model: str) -> str | None:
         return "google"
     if any(model.startswith(p) for p in _MINIMAX_PREFIXES):
         return "minimax"
+    if any(model.startswith(p) for p in _STEPFUN_PREFIXES):
+        return "stepfun"
     if any(model.startswith(org) for org in _LOCAL_HF_ORGS):
-        return None  # local model, never route to cloud
-    if "/" in model:  # openrouter format: "meta-llama/llama-3-8b"
+        return None
+    if "/" in model:
         return "openrouter"
     return None
 
@@ -100,7 +101,6 @@ def _to_openai_msgs(messages: Sequence[Message]) -> list[dict[str, Any]]:
 def _to_anthropic_msgs(
     messages: Sequence[Message],
 ) -> tuple[str, list[dict[str, Any]]]:
-    """Return (system_text, chat_messages) in Anthropic format."""
     system_text = ""
     chat: list[dict[str, Any]] = []
     for m in messages:
@@ -108,20 +108,16 @@ def _to_anthropic_msgs(
         if role == "system":
             system_text = m.content or ""
         else:
-            # Anthropic only allows "user" and "assistant"
             ar = "user" if role != "assistant" else "assistant"
             chat.append({"role": ar, "content": m.content or ""})
     return system_text, chat
 
 
 def _to_google_contents(messages: Sequence[Message]) -> list[dict[str, Any]]:
-    """Convert to Google Gemini content format."""
     contents = []
     for m in messages:
         role = m.role.value if hasattr(m.role, "value") else str(m.role)
         if role == "system":
-            # Gemini doesn't have a system role in the contents array;
-            # prepend as a user message.
             contents.append({"role": "user", "parts": [{"text": m.content or ""}]})
             contents.append({"role": "model", "parts": [{"text": "Understood."}]})
         elif role == "assistant":
@@ -177,10 +173,10 @@ async def _stream_openai(
                 try:
                     chunk = json.loads(data)
                     delta = chunk["choices"][0]["delta"].get("content") or ""
-                    if delta:
-                        yield delta
                 except Exception:
-                    pass
+                    delta = ""
+                if delta:
+                    yield delta
 
 
 async def _stream_anthropic(
@@ -224,7 +220,7 @@ async def _stream_anthropic(
                 try:
                     event = json.loads(data)
                     if event.get("type") == "content_block_delta":
-                        text = event.get("delta", {}).get("text", "")
+                        text = event.get("delta", {}).get("text") or ""
                         if text:
                             yield text
                 except Exception:
@@ -265,135 +261,58 @@ async def _stream_google(
                 data = line[6:].strip()
                 try:
                     chunk = json.loads(data)
-                    parts = (
-                        chunk.get("candidates", [{}])[0]
-                        .get("content", {})
-                        .get("parts", [])
+                    candidates = chunk.get("candidates", [{}])
+                    content_parts = (
+                        candidates[0].get("content", {}).get("parts", []) if candidates else []
                     )
-                    for part in parts:
-                        text = part.get("text", "")
+                    for part in content_parts:
+                        text = part.get("text") or ""
                         if text:
                             yield text
                 except Exception:
                     pass
 
 
-# ---------------------------------------------------------------------------
-# Local (Ollama) direct streaming — bypasses engine routing entirely
-# ---------------------------------------------------------------------------
-
-
-def _ollama_host() -> str:
-    return os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-
-
-async def stream_local(
+async def _stream_openrouter(
     model: str,
     messages: Sequence[Message],
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
+    temperature: float,
+    max_tokens: int,
 ) -> AsyncIterator[str]:
-    """Stream tokens directly from Ollama, bypassing the engine system."""
+    keys = _load_keys()
+    api_key = keys.get("OPENROUTER_API_KEY", "")
+    if not api_key:
+        raise ValueError("OPENROUTER_API_KEY not set — add it in the Cloud Models tab")
+
     payload = {
         "model": model,
         "messages": _to_openai_msgs(messages),
+        "temperature": temperature,
+        "max_tokens": max_tokens,
         "stream": True,
-        # Disable extended thinking (Qwen3.5 etc.) — when enabled all tokens
-        # go into the 'thinking' field and 'content' stays empty.
-        "think": False,
-        "options": {
-            "temperature": temperature,
-            "num_predict": max_tokens,
-        },
     }
-    host = _ollama_host()
-    async with httpx.AsyncClient(timeout=300) as client:
-        async with client.stream("POST", f"{host}/api/chat", json=payload) as resp:
+
+    async with httpx.AsyncClient(timeout=180) as client:
+        async with client.stream(
+            "POST",
+            "https://openrouter.ai/api/v1/chat/completions",
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+        ) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
-                if not line:
+                if not line.startswith("data: "):
                     continue
+                data = line[6:].strip()
+                if data == "[DONE]":
+                    break
                 try:
-                    data = json.loads(line)
-                    token = data.get("message", {}).get("content", "")
-                    if token:
-                        yield token
-                    if data.get("done"):
-                        break
+                    chunk = json.loads(data)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {}).get("content") or ""
+                    if delta:
+                        yield delta
                 except Exception:
                     pass
-
-
-async def list_local_models() -> list[str]:
-    """Return Ollama model names directly from the Ollama API."""
-    host = _ollama_host()
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            resp = await client.get(f"{host}/api/tags")
-            resp.raise_for_status()
-            data = resp.json()
-            return [m["name"] for m in data.get("models", [])]
-    except Exception:
-        return []
-
-
-# ---------------------------------------------------------------------------
-# Public entry point
-# ---------------------------------------------------------------------------
-
-
-async def stream_cloud(
-    model: str,
-    messages: Sequence[Message],
-    temperature: float = 0.7,
-    max_tokens: int = 1024,
-) -> AsyncIterator[str]:
-    """Stream tokens from a cloud provider for the given model."""
-    provider = get_provider(model)
-
-    if provider == "openai":
-        async for token in _stream_openai(model, messages, temperature, max_tokens):
-            yield token
-
-    elif provider == "anthropic":
-        async for token in _stream_anthropic(model, messages, temperature, max_tokens):
-            yield token
-
-    elif provider == "google":
-        async for token in _stream_google(model, messages, temperature, max_tokens):
-            yield token
-
-    elif provider == "openrouter":
-        keys = _load_keys()
-        api_key = keys.get("OPENROUTER_API_KEY", "")
-        if not api_key:
-            raise ValueError(
-                "OPENROUTER_API_KEY not set — add it in the Cloud Models tab"
-            )
-        async for token in _stream_openai(
-            model,
-            messages,
-            temperature,
-            max_tokens,
-            base_url="https://openrouter.ai/api/v1",
-            api_key_name="OPENROUTER_API_KEY",
-        ):
-            yield token
-
-    elif provider == "minimax":
-        keys = _load_keys()
-        api_key = keys.get("MINIMAX_API_KEY", "")
-        if not api_key:
-            raise ValueError("MINIMAX_API_KEY not set — add it in the Cloud Models tab")
-        async for token in _stream_openai(
-            model,
-            messages,
-            temperature,
-            max_tokens,
-            base_url="https://api.minimax.io/v1",
-            api_key_name="MINIMAX_API_KEY",
-        ):
-            yield token
-
-    else:
-        raise ValueError(f"Unknown cloud provider for model: {model!r}")

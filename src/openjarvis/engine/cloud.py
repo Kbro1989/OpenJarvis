@@ -1,6 +1,6 @@
 """Cloud inference engine.
 
-OpenAI, Anthropic, Google, MiniMax, and DeepSeek API backends.
+OpenAI, Anthropic, Google, MiniMax, DeepSeek, and Nous/StepFun API backends.
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import logging
 import os
 import time
 from collections.abc import AsyncIterator, Sequence
+from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import httpx

@@ -65,7 +65,11 @@ def consult(query: str, context: str = "", emotional_input: int = 50) -> dict:
         "hexagram_symbol": hex_symbols.get("unicode", ""),
         "hexagram_chinese": hex_symbols.get("chinese", ""),
         "hexagram_pinyin": hex_symbols.get("pinyin", ""),
-        "hexagram_color": _hexagram_color(int(hexagram_id or 0)),
+        "hexagram_color": _hexagram_color(
+            int(hexagram_id or 0),
+            chinese_text=hex_symbols.get("chinese", ""),
+            unicode_symbol_text=hex_symbols.get("unicode", ""),
+        ),
         "consensus_hexagram_id": int(hexagram_id or 0),
         "consensus_hexagram_name": hexagram_name or "",
         "consensus_temporal": temporal,
