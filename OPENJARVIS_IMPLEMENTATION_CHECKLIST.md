@@ -77,6 +77,8 @@ Root: C:\Users\krist\Desktop\OpenJarvis
 - [x] `src/openjarvis/tools/process_registry.py` — 4544 bytes [FEED]
 - [x] `src/openjarvis/tools/async_delegation.py` — 346 bytes [FEED]
 - [x] `src/openjarvis/tools/kanban_staging_bridge.py` — 328 lines, ports antigravity kanban-staging-queue watcher+ticker+skill_sync, py_compile + pytest + live verified [FEED]
+- [x] `src/openjarvis/save/jarvis_save_string.py` — save string encoder/decoder, ported from openrsc-vinilla player_save.json, py_compile + live verified [FEED]
+- [x] `src/openjarvis/save/save_string_bin.py` — local bin with tick-based CF push, usage-aware throttling, py_compile + live verified [FEED]
 - [x] `src/openjarvis/engine/` — ollama, cloud, litellm, openai_compat, multi
 - [x] `src/openjarvis/channels/` — 30+ messaging channels
 - [x] `src/openjarvis/connectors/` — 30+ external service connectors
@@ -124,9 +126,12 @@ Root: C:\Users\krist\Desktop\OpenJarvis
 - [x] `/blueprint` — Hermes-shaped catalog/seed/create
 - [x] `/learn` — status/run/ingests/ingest with provenance
 - [x] `/journey` — lookup/replay/weave/consult/leaderboard
-- [x] `/agents` — process_registry + async delegations + agent state
+- [x] `/agents` — process_registry + async delegations + agent state + registered agent inventory
+- [x] `/rules` — scans OpenJarvis `src/` and Hermes skills for placeholders/mocks/NotImplementedError
 - [x] `/script` — universal script pipeline: 9 types, quantum expansion, voice modulation, ledger
 - [x] `/task` — deterministic task decomposition + real tool execution + verification gates + artifact ledger
+- [x] `/save` — save string append/stats/tick/reset via local bin
+- [x] `/load` — load save state by session_id
 
 ### In Progress
 - [x] `/tools` — enable/disable tools, reset session (chat_cmd.py)

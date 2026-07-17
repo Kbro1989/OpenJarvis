@@ -1008,45 +1008,46 @@ def chat(
             continue
         elif cmd == "/agents":
             try:
+                from openjarvis.core.registry import AgentRegistry
                 from openjarvis.tools.process_registry import process_registry, format_uptime_short
+                from openjarvis.tools.async_delegation import list_async_delegations
 
+                # 1. Registered agents
+                registered = []
+                for key in AgentRegistry.keys():
+                    cls = AgentRegistry.get(key)
+                    registered.append({
+                        "key": key,
+                        "class": cls.__name__,
+                        "module": cls.__module__,
+                    })
+
+                # 2. Hermes-style process sessions
                 processes = process_registry.list_sessions()
                 running = [p for p in processes if p.get("status") == "running"]
                 finished = [p for p in processes if p.get("status") != "running"]
 
-                console.print(f"[bold]Running processes:[/bold] {len(running)}")
-                for p in running:
-                    cmd_text = p.get("command", "")[:80]
-                    up = format_uptime_short(p.get("uptime_seconds", 0))
-                    console.print(f"    {p.get('session_id', '?')} · {up} · {cmd_text}")
-
-                if finished:
-                    console.print(f"[bold]Recently finished:[/bold] {len(finished)}")
-
+                # 3. Async delegations
                 try:
-                    from openjarvis.tools.async_delegation import list_async_delegations
-
                     delegations = list_async_delegations()
-                    running_d = [d for d in delegations if d.get("status") == "running"]
-                    if delegations:
-                        console.print(
-                            f"[bold]Background delegations:[/bold] {len(running_d)} running"
-                        )
-                        for d in delegations:
-                            goal = (d.get("goal") or "")[:60]
-                            console.print(
-                                f"    {d.get('delegation_id', '?')} · "
-                                f"{d.get('status', '?')} · {goal}"
-                            )
                 except Exception:
-                    pass
+                    delegations = []
 
+                # 4. Current agent state
                 agent_running = getattr(agent, "_agent_running", False)
-                console.print(
-                    f"[bold]Agent:[/bold] {'running' if agent_running else 'idle'}"
-                )
+
+                payload = {
+                    "command": "/agents",
+                    "registered_agents": registered,
+                    "running_processes": len(running),
+                    "recently_finished": len(finished),
+                    "background_delegations": len(delegations),
+                    "agent_state": "running" if agent_running else "idle",
+                    "kingwen_session_id": getattr(agent, "_kingwen_session_id", None),
+                }
+                console.print_json(payload)
             except Exception as exc:
-                console.print(f"[red]agents lookup failed: {exc}[/red]")
+                console.print(f"[red]/agents failed: {exc}[/red]")
             continue
         elif cmd.startswith("/journey"):
             from openjarvis.core.journey_executor import JourneyExecutor
@@ -1685,36 +1686,59 @@ def chat(
             continue
         elif cmd == "/rules":
             try:
+                import re
                 from pathlib import Path
 
+                root = Path(__file__).resolve().parent.parent.parent
+                src_path = root / "src"
                 skills_dir = Path.home() / "AppData" / "Local" / "hermes" / "skills"
-                scan_path = skills_dir / "rules" / "rules-skill-scan.txt"
-                pattern = (
-                    "(placeholder|stub|todo|mock|fake|invalid|minimal content|"
-                    "wip|work-in-progress|no-op|pass-through|dummy)"
-                )
-                hits = []
-                for skill_md in skills_dir.rglob("SKILL.md"):
-                    try:
-                        text = skill_md.read_text(encoding="utf-8", errors="replace")
-                    except Exception:
-                        continue
-                    for lineno, line in enumerate(text.splitlines(), 1):
-                        import re
 
-                        if re.search(pattern, line, re.IGNORECASE):
-                            hits.append({
-                                "path": str(skill_md),
-                                "line": lineno,
-                                "match": line.strip(),
-                            })
+                patterns = [
+                    re.compile(r"\b(placeholder|stub|todo|mock|fake|invalid|minimal content|wip|work-in-progress|no-op|pass-through|dummy)\b", re.IGNORECASE),
+                    re.compile(r"MagicMock|unittest\.mock|raise NotImplementedError"),
+                ]
+
+                src_hits = []
+                if src_path.exists():
+                    for py in src_path.rglob("*.py"):
+                        try:
+                            text = py.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            continue
+                        for lineno, line in enumerate(text.splitlines(), 1):
+                            for pat in patterns:
+                                if pat.search(line):
+                                    src_hits.append({
+                                        "path": str(py),
+                                        "line": lineno,
+                                        "match": line.strip()[:200],
+                                        "source": "openjarvis",
+                                    })
+                                    break
+
+                skill_hits = []
+                if skills_dir.exists():
+                    for skill_md in skills_dir.rglob("SKILL.md"):
+                        try:
+                            text = skill_md.read_text(encoding="utf-8", errors="replace")
+                        except Exception:
+                            continue
+                        for lineno, line in enumerate(text.splitlines(), 1):
+                            if re.search(r"(placeholder|stub|todo|mock|fake|invalid|minimal content|wip|work-in-progress|no-op|pass-through|dummy)", line, re.IGNORECASE):
+                                skill_hits.append({
+                                    "path": str(skill_md),
+                                    "line": lineno,
+                                    "match": line.strip()[:200],
+                                    "source": "hermes",
+                                })
+
                 payload = {
                     "command": "/rules",
                     "skill": "rules",
-                    "scan_path": str(scan_path),
-                    "skills_dir": str(skills_dir),
-                    "violations_found": len(hits),
-                    "violations": hits[:50],
+                    "openjarvis_src_hits": len(src_hits),
+                    "hermes_skill_hits": len(skill_hits),
+                    "openjarvis_violations": src_hits[:50],
+                    "hermes_violations": skill_hits[:50],
                 }
                 console.print_json(payload)
             except Exception as exc:
@@ -1757,6 +1781,43 @@ def chat(
                     console.print(f"[red]{_task_result.content}[/red]")
             except Exception as _task_exc:
                 console.print(f"[red]/task error: {_task_exc}[/red]")
+            continue
+        elif cmd.startswith("/save"):
+            _save_raw = cmd[len("/save"):].strip()
+            _save_tokens = _save_raw.split() if _save_raw else []
+            _save_action = _save_tokens[0] if _save_tokens else "append"
+            try:
+                from openjarvis.save.save_string_bin import SaveStringBinTool
+                _bin = SaveStringBinTool()
+                if _save_action == "stats":
+                    _res = _bin.execute(action="stats")
+                elif _save_action == "tick":
+                    _res = _bin.execute(action="tick_push", max_per_tick=5, daily_budget=500)
+                elif _save_action == "reset":
+                    _res = _bin.execute(action="reset")
+                else:
+                    session_id = _save_tokens[0] if _save_tokens else "current"
+                    domain = _save_tokens[1] if len(_save_tokens) > 1 else "session"
+                    _res = _bin.execute(action="append", session_id=session_id, domain=domain, state={"ts": int(time.time() * 1000)})
+                console.print(_res.content if _res.success else f"[red]{_res.content}[/red]")
+            except Exception as _save_exc:
+                console.print(f"[red]/save error: {_save_exc}[/red]")
+            continue
+        elif cmd.startswith("/load"):
+            _load_id = cmd[len("/load"):].strip()
+            if not _load_id:
+                console.print("[yellow]/load usage:[/yellow] /load <session_id>")
+                continue
+            try:
+                from openjarvis.save.save_string_bin import read_unpaged_records
+                records = read_unpaged_records()
+                match = next((r for r in records if r.session_id == _load_id), None)
+                if match:
+                    console.print_json(match.state)
+                else:
+                    console.print(f"[yellow]No save record found: {_load_id}[/yellow]")
+            except Exception as _load_exc:
+                console.print(f"[red]/load error: {_load_exc}[/red]")
             continue
         elif cmd == "/help":
             console.print(

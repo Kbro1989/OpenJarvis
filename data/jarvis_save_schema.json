@@ -1,0 +1,68 @@
+{
+  "schema_version": "jarvis-save-v1",
+  "session_id": "",
+  "timestamp": 0,
+  "user": {
+    "id": "",
+    "username": "",
+    "display_name": ""
+  },
+  "position": {
+    "x": 0,
+    "y": 0,
+    "world": 0,
+    "plane": 0
+  },
+  "fatigue": 0,
+  "combat_style": 0,
+  "settings": {
+    "block_chat": 0,
+    "block_private_chat": 0,
+    "block_trade": 0,
+    "block_duel": 0,
+    "camera_auto": 0,
+    "one_mouse_button": 0,
+    "sound_on": 1
+  },
+  "appearance": {
+    "hair_colour": 0,
+    "top_colour": 0,
+    "trouser_colour": 0,
+    "skin_colour": 0,
+    "head_sprite": 1,
+    "body_sprite": 2,
+    "skulled": 0
+  },
+  "social": {
+    "friends": [],
+    "ignores": []
+  },
+  "inventory": [],
+  "bank": [],
+  "quest_points": 0,
+  "quest_stages": {},
+  "skills": {},
+  "kingwen": {
+    "current_hexagram": 0,
+    "phase_temporal": "",
+    "yao_vocabulary": "",
+    "emotional_vector": {
+      "chaos": 0.0,
+      "whimsy": 0.0,
+      "dark_tone": 0.0,
+      "coherence": 0.0,
+      "voice_weight": 0.0
+    },
+    "porosity": 0.0,
+    "consensus": {}
+  },
+  "traces": {
+    "session_count": 0,
+    "total_turns": 0,
+    "last_trace_id": ""
+  },
+  "cache": {},
+  "login_ip": null,
+  "id": 0,
+  "login_date": 0
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": "model-router-v1",
+  "updated_at": 1784317127086,
+  "skills": {
+    "model-router": {
+      "version": "1.0.0",
+      "hash": "",
+      "reputation": 1.0,
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    }
+  },
+  "providers": {
+    "openrouter": {
+      "state": "live",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
+    },
+    "ollama": {
+      "state": "local",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
+    },
+    "cf-workers": {
+      "state": "edge",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
+    }
+  },
+  "kingwen": {
+    "hexagram_id": 47,
+    "phase": 2,
+    "porosity": 0.85,
+    "emotional_vector": {
+      "voiceWeight": 0.73,
+      "coherence": 0.69,
+      "chaos": 0.32,
+      "whimsy": 0.27,
+      "darkTone": 0.23
+    },
+    "task_depth": "small",
+    "last_model": "qwen3.6:27b"
+  },
+  "context": {
+    "task_type": "general",
+    "depth": "small",
+    "last_model": "anthropic/claude-opus-4.8",
+    "last_provider": "openrouter"
+  },
+  "slot_state": {
+    "ollama:qwen3.6:27b": {
+      "reputation": 0.528,
+      "last_failed_at": 1784317127.0839038,
+      "cooldown_until": 1784320727.0839038,
+      "success_count": 1,
+      "failure_count": 1,
+      "avg_latency_ms": 1200.0,
+      "latency_samples": 2,
+      "last_seen": 1784317127.0809038
+    },
+    "openrouter:anthropic/claude-opus-4.8": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    }
+  }
+}
