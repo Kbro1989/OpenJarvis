@@ -82,6 +82,10 @@ class EventType(str, Enum):
     FEEDBACK_RECEIVED = "feedback_received"
     KINGWEN_VOICE_COMPLETE = "kingwen_voice_complete"
     KINGWEN_CONSENSUS_UPDATE = "kingwen_consensus_update"
+    KINGWEN_LEDGER_WRITE = "kingwen_ledger_write"
+    JOURNEY_ARRIVAL = "journey_arrival"
+    JOURNEY_WEAVE = "journey_weave"
+    LEARN_AUTO_INGEST = "learn_auto_ingest"
 
 
 @dataclass(slots=True)
@@ -201,3 +205,32 @@ __all__ = [
     "get_event_bus",
     "reset_event_bus",
 ]
+
+
+def _emit_journey_arrival(bus: EventBus, query: str, matches: list[dict], novel_edges: list[dict]) -> None:
+    try:
+        bus.publish(
+            EventType.JOURNEY_ARRIVAL,
+            {
+                "query": query,
+                "match_count": len(matches),
+                "top_session_id": matches[0]["session_id"] if matches else "",
+                "novel_edges": novel_edges,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _emit_learn_auto_ingest(bus: EventBus, query: str, novel_edges: list[dict]) -> None:
+    try:
+        bus.publish(
+            EventType.LEARN_AUTO_INGEST,
+            {
+                "query": query,
+                "novel_edge_count": len(novel_edges),
+                "novel_edges": novel_edges,
+            },
+        )
+    except Exception:
+        pass

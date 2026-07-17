@@ -529,6 +529,13 @@ MODEL_ROLODEX: Dict[str, Any] = {
         "research": ["research", "paper", "arxiv", "search", "compare", "analysis", "evidence"],
         "vision":   ["image", "vision", "ocr", "diagram", "screenshot", "picture"],
         "embed":    ["embed", "retrieval", "rag", "vector"],
+        "oracle":   ["/oracle", "/counsel", "oracle_speak", "voice", "tts", "prosody", "cartesia"],
+        "journey":  ["/journey", "lookup", "replay", "weave", "session", "history", "memory", "learn"],
+        "models":   ["/models", "model_rolodex", "task_chain", "ternary_router", "model_classes"],
+        "agent":    ["/agent", "agentic", "operative", "monitor", "run_agent", "engine.generate", "tool_use"],
+        "monitor":  ["monitor_operative", "trace", "logs", "status", "watch", "recover", "errors"],
+        "chat":     ["/help", "/history", "/clear", "chat", "ask", "prompt", "message"],
+        "router":   ["routing", "priority", "constraint", "transition", "deliberation", "fault", "crit"],
     },
 
     # ── King Wen data paths (read-only) ─────────────────────────────────────

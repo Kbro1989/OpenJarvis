@@ -1,0 +1,192 @@
+{
+  "generated_at": "2026-07-15T23:30:00Z",
+  "programs": [
+    {
+      "name": "open-design",
+      "path": "C:\\Users\\krist\\Desktop\\open-design",
+      "stack": "pnpm monorepo, Next.js 16, Electron desktop, daemon",
+      "capabilities": [
+        {
+          "name": "memory/feedback_the_rules.md",
+          "source": ".od/memory/feedback_the_rules.md",
+          "copyable": true,
+          "target": "OpenJarvis/.openjarvis/MEMORY.md or runtime prompts"
+        },
+        {
+          "name": "audioChannelStore",
+          "source": "app/src/stores/audioChannelStore.ts",
+          "copyable": false,
+          "target": "skip — frontend states, OpenJarvis is Python"
+        },
+        {
+          "name": "useAutoUpdater hook",
+          "source": "app/src/hooks/useAutoUpdater.ts",
+          "copyable": false,
+          "target": "skip — Electron-specific"
+        },
+        {
+          "name": "PlatformContext/desktop bridge",
+          "source": "app/src/platform/PlatformContext.tsx",
+          "copyable": false,
+          "target": "skip"
+        },
+        {
+          "name": "audioChannelStore / generationStore / effectsStore",
+          "source": "app/src/stores/*.ts",
+          "copyable": false,
+          "target": "skip — frontend state"
+        },
+        {
+          "name": "mcp.json / .od/moa.json connector config",
+          "source": ".mcp.json, .od/moa.json, .od/connectors/*.json",
+          "copyable": true,
+          "target": "OpenJarvis/src/openjarvis/tools/mcp_adapter.py / core/config.py"
+        },
+        {
+          "name": "MCP server mode",
+          "source": "app/plugins/*.ts",
+          "copyable": false,
+          "target": "skip"
+        }
+      ]
+    },
+    {
+      "name": "Megatron-LM-review",
+      "path": "C:\\Users\\krist\\Desktop\\Megatron-LM-review",
+      "stack": "Megatron training substrate",
+      "capabilities": [
+        {
+          "name": "kingwen_train_data tokenizer/dataset pipeline",
+          "source": "kingwen_train_data/tokenize_for_megatron.py",
+          "copyable": true,
+          "target": "OpenJarvis/learning or bridge module"
+        },
+        {
+          "name": "domain-aware SampleMeta dataset",
+          "source": "kingwen_train_data/runtime/kingwen_dataset.py",
+          "copyable": true,
+          "target": "OpenJarvis/learning/dataset parsers"
+        },
+        {
+          "name": "build_usage_labels live ingestion",
+          "source": "kingwen_train_data/build_usage_labels.py",
+          "copyable": true,
+          "target": "OpenJarvis/learning/auto-ingest pipeline"
+        },
+        {
+          "name": "integrity_check corpus validator",
+          "source": "kingwen_train_data/integrity_check.py",
+          "copyable": true,
+          "target": "OpenJarvis/learning/validation"
+        }
+      ]
+    },
+    {
+      "name": "voicebox",
+      "path": "C:\\Users\\krist\\Desktop\\voicebox",
+      "stack": "Python/FastAPI backend + frontend",
+      "capabilities": [
+        {
+          "name": "backend/backends/*_backend.py multi-vendor TTS",
+          "source": "backend/backends/*.py",
+          "copyable": false,
+          "target": "skip — already covered by CartesiaAdapter + worker /tts"
+        },
+        {
+          "name": "database models/session/migrations",
+          "source": "backend/database/*.py",
+          "copyable": true,
+          "target": "OpenJarvis/src/openjarvis/analytics/trace_store.py"
+        },
+        {
+          "name": "mcp_server/__init__.py",
+          "source": "backend/mcp_server/__init__.py",
+          "copyable": true,
+          "target": "OpenJarvis/src/openjarvis/tools/mcp_adapter.py"
+        },
+        {
+          "name": "voice training vector/profile exports",
+          "source": "backend/exports/*.json",
+          "copyable": true,
+          "target": "OpenJarvis kingwen voice sidecar / training data"
+        }
+      ]
+    },
+    {
+      "name": "rsmv",
+      "path": "C:\\Users\\krist\\Desktop\\rsmv",
+      "stack": "RuneScape renderer substrate",
+      "capabilities": [
+        {
+          "name": "alt1/docs/* loader patterns",
+          "source": "alt1/docs/*.md",
+          "copyable": true,
+          "target": "OpenJarvis doc adapters or vision parser rules"
+        },
+        {
+          "name": "alt1 image/OCR stack",
+          "source": "alt1/*",
+          "copyable": false,
+          "target": "skip — desktop overlay substrate"
+        }
+      ]
+    },
+    {
+      "name": "Color-by-number-main",
+      "path": "C:\\Users\\krist\\Desktop\\Color-by-number-main",
+      "stack": "Auto color-by-number web app",
+      "capabilities": [
+        {
+          "name": "imageProcessor.ts K-Means + connected components",
+          "source": "Color-by-number-main/services/imageProcessor.ts",
+          "copyable": true,
+          "target": "OpenJarvis/src/openjarvis/vision/__init__.py"
+        },
+        {
+          "name": "geminiService.ts AI vision backend",
+          "source": "Color-by-number-main/services/geminiService.ts",
+          "copyable": true,
+          "target": "OpenJarvis/src/openjarvis/vision/gemini_service.py"
+        },
+        {
+          "name": "chromanumber-api FastAPI routes",
+          "source": "chromanumber-api/src/index.ts",
+          "copyable": true,
+          "target": "OpenJarvis bridge_servers or API routes"
+        }
+      ]
+    },
+    {
+      "name": "kingwen-oracle-worker",
+      "path": "C:\\Users\\krist\\Desktop\\kingwen-oracle-worker\\kingwen-oracle",
+      "stack": "Cloudflare Worker",
+      "capabilities": [
+        {
+          "name": "/blueprint agentic instruction endpoint",
+          "source": "src/index.ts",
+          "copyable": true,
+          "target": "OpenJarvis router + chat_cmd handlers"
+        },
+        {
+          "name": "tts compliance headers",
+          "source": "src/index.ts",
+          "copyable": true,
+          "target": "OpenJarvis/audio_dsp.py"
+        }
+      ]
+    },
+    {
+      "name": "kimi2",
+      "path": "C:\\Users\\krist\\Desktop\\kimi2",
+      "stack": "Kimi frontend/mirror/reference",
+      "capabilities": [
+        {
+          "name": "Kimi local server proxy manifest",
+          "source": "kimi2/*",
+          "copyable": false,
+          "target": "skip — reference UI/manifests only"
+        }
+      ]
+    }
+  ]
+}

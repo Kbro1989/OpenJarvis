@@ -993,7 +993,7 @@ class ToolsConfig:
 class AgentConfig:
     """Agent harness settings — orchestration, tools, system prompt."""
 
-    default_agent: str = "simple"
+    default_agent: str = "monitor_operative"
     max_turns: int = 10
     tools: str = ""  # comma-separated tool names
     objective: str = ""  # concise purpose for routing/learning/docs
@@ -1247,7 +1247,7 @@ class ChannelConfig:
 
     enabled: bool = False
     default_channel: str = ""
-    default_agent: str = "simple"
+    default_agent: str = "monitor_operative"
     telegram: TelegramChannelConfig = field(default_factory=TelegramChannelConfig)
     discord: DiscordChannelConfig = field(default_factory=DiscordChannelConfig)
     slack: SlackChannelConfig = field(default_factory=SlackChannelConfig)
@@ -1831,17 +1831,15 @@ def _parse_mining_section(data: dict) -> Optional["MiningConfig"]:
     extra = section.get("extra", {}) or {}
 
     target_str = section.get("submit_target", "solo")
-    submit_target: Any
-    if target_str == "solo":
-        submit_target = SoloTarget(
-            pearld_rpc_url=extra.get("pearld_rpc_url", "http://localhost:44107")
-        )
-    elif isinstance(target_str, str) and target_str.startswith("pool:"):
-        submit_target = PoolTarget(url=target_str[len("pool:") :])
-    else:
+    if isinstance(target_str, str) and target_str.startswith("pool:"):
         raise ValueError(
-            f"[mining].submit_target must be 'solo' or 'pool:<url>', got {target_str!r}"
+            "[mining].submit_target='pool:<url>' is not supported in v1. "
+            "Use 'solo', or wait for v2 pool support."
         )
+
+    submit_target: Any = SoloTarget(
+        pearld_rpc_url=extra.get("pearld_rpc_url", "http://localhost:44107")
+    )
 
     return MiningConfig(
         provider=section["provider"],

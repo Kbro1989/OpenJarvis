@@ -310,7 +310,18 @@ class RoutingStrategy:
         skill_analysis: Optional[SkillAnalysis] = None,
         tool_call_model: Optional[str] = None,
     ) -> ModelRoutingResult:
-        raise NotImplementedError
+        if tool_call_model:
+            return ModelRoutingResult(
+                tool_call_model, "model_based_from_tool_call", 1.0
+            )
+        models = self._get_models_for_stage(stage)
+        if not models:
+            return ModelRoutingResult(
+                "answer-1", "model_based_fallback_empty_stage", 0.3
+            )
+        return ModelRoutingResult(
+            models[0], f"model_based_{stage}_primary", 0.7
+        )
 
 
 class RouterDecidesStrategy(RoutingStrategy):

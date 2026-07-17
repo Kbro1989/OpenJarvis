@@ -142,4 +142,45 @@ try:
 except ImportError:
     pass
 
+# King Wen oracle, voice, learning, and VHDL routing tools
+try:
+    import openjarvis.tools.kingwen_oracle_consult_tool  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_voice_tools  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_learning_tools  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_vhdl_router_tool  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_actionable_bridge  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_model_select_tool  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_narrative_dispatch_tool  # noqa: F401
+except ImportError:
+    pass
+
+try:
+    import openjarvis.tools.kingwen_script_pipeline_tool  # noqa: F401
+except ImportError:
+    pass
+
 __all__ = ["BaseTool", "ToolExecutor", "ToolSpec"]

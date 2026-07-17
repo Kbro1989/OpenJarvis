@@ -217,6 +217,49 @@ class BaseAgent(ABC):
                     )
                     if len(history) > 24:
                         del history[:-24]
+                try:
+                    from openjarvis.core.causality_ledger import record_from_session_artifact, append as ledger_append
+                    session_id = getattr(self, "_kingwen_session_id", "openjarvis")
+                    cluster = [payload.get("hexagram_name", "") or "", payload.get("phase_temporal", "") or "", payload.get("category", "") or "", payload.get("action", "") or ""]
+                    cluster = [c for c in cluster if c]
+                    if not cluster:
+                        cluster = ["kingwen"]
+                    record = record_from_session_artifact(
+                        session_id=session_id,
+                        surface="agent",
+                        artifact_type="kingwen_turn_start",
+                        artifact_id=f"kingwen-{session_id}-{payload.get('hexagram_id', 'x')}",
+                        path="agent://_emit_turn_start",
+                        intent=input[:500],
+                        intent_source="user_first",
+                        cluster=cluster,
+                        synaptic_weight=1.0,
+                        tags=cluster[:5],
+                        reason="agent_turn_start",
+                        model=getattr(self, "_model", None),
+                        parent_artifact_id=None,
+                        consumer="all",
+                        kingwen={
+                            "hexagram_id": payload.get("hexagram_id"),
+                            "phase_temporal": payload.get("phase_temporal"),
+                            "porosity": float((tongue or {}).get("porosity", 0.35)),
+                            "voice_weight": float(payload.get("emotional_deltas", {}).get("voiceWeight", 0.0)),
+                            "coherence": float(payload.get("emotional_deltas", {}).get("coherence", 0.0)),
+                            "chaos": float(payload.get("emotional_deltas", {}).get("chaos", 0.0)),
+                            "whimsy": float(payload.get("emotional_deltas", {}).get("whimsy", 0.0)),
+                            "dark_tone": float(payload.get("emotional_deltas", {}).get("darkTone", 0.0)),
+                            "action": payload.get("action", ""),
+                            "category": payload.get("category", ""),
+                            "trajectory": (tongue or {}).get("trajectory"),
+                            "direction": (tongue or {}).get("direction"),
+                        },
+                        provenance={"source": "agent_turn_start", "provider": "kingwen"},
+                    )
+                    ledger_append(record)
+                    if self._bus:
+                        self._bus.publish(EventType.KINGWEN_LEDGER_WRITE, {"ledger_record": record.to_dict()})
+                except Exception:
+                    pass
             except Exception:
                 self._kingwen_voice_preset = None
                 self._kingwen_voice_section = ""

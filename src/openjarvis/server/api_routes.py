@@ -6,6 +6,7 @@ import asyncio
 import inspect
 import json
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -570,7 +571,7 @@ async def kingwen_avatar(session_id: str, request: Request):
             weights_path=workspace / "data" / "emotional-weights.json",
             reflections_path=workspace / "data" / "temporal-reflections.json",
         )
-        payload = provider.consult(text=session_id, session_id=session_id)
+        payload = provider.consult(text=session_id, session_id=session_id, emotional_input=50)
         speech_cfg = getattr(getattr(request.app.state, "config", None), "speech", None)
         tts_backend = getattr(speech_cfg, "backend", "cartesia") or "cartesia"
         preset = provider.voice_preset(
@@ -584,6 +585,7 @@ async def kingwen_avatar(session_id: str, request: Request):
             response_text="",
             canonical_tick_ms=640.0,
         )
+        arm = _load_avalokiteshvara_arm(int(payload.get("hexagram_id") or 0))
         return {
             "session_id": session_id,
             "hexagram_id": payload.get("hexagram_id"),
@@ -599,11 +601,31 @@ async def kingwen_avatar(session_id: str, request: Request):
             "voice_preset": preset,
             "oracle_console": oracle_console,
             "canonical_tick_ms": 640.0,
+            "avalokiteshvara_arm": arm,
+            "compassionate_observer": True,
         }
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+def _load_avalokiteshvara_arm(hexagram_id: int) -> Dict[str, Any]:
+    try:
+        candidate = Path("C:/Users/krist/Desktop/Megatron-LM-review/kingwen_train_data/avalokiteshvara_domain.jsonl")
+        if not candidate.exists():
+            return {}
+        for line in candidate.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            obj = json.loads(line)
+            label = obj.get("label_payload") or {}
+            if int(label.get("hexagram_id") or 0) == int(hexagram_id or 0):
+                return label
+    except Exception:
+        pass
+    return {}
 
 
 @kingwen_router.post("/consult")
@@ -624,7 +646,11 @@ async def kingwen_consult(req: Dict[str, Any], request: Request):
             weights_path=workspace / "data" / "emotional-weights.json",
             reflections_path=workspace / "data" / "temporal-reflections.json",
         )
-        payload = provider.consult(text=text, session_id=session_id)
+        payload = provider.consult(
+            text=text,
+            session_id=session_id,
+            emotional_input=50,
+        )
         speech_cfg = getattr(getattr(request.app.state, "config", None), "speech", None)
         tts_backend = getattr(speech_cfg, "backend", "cartesia") or "cartesia"
         preset = provider.voice_preset(

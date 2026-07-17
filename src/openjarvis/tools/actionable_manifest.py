@@ -34,6 +34,19 @@ from typing import Any
 from openjarvis.core.registry import ToolRegistry
 from openjarvis.tools._stubs import BaseTool
 
+# Eagerly import King Wen tool modules so their @ToolRegistry.register decorators fire.
+def _register_kingwen_tools() -> None:
+    try:
+        import openjarvis.tools.kingwen_oracle_consult_tool  # noqa: F401
+        import openjarvis.tools.kingwen_voice_tools           # noqa: F401
+        import openjarvis.tools.kingwen_learning_tools        # noqa: F401
+        import openjarvis.tools.kingwen_vhdl_router_tool      # noqa: F401
+        import openjarvis.tools.kingwen_actionable_bridge     # noqa: F401
+    except Exception:
+        pass  # partial availability is fine
+
+_register_kingwen_tools()
+
 # Aliases/normalizations for tool names and common typed commands.
 _TOOL_ALIASES: dict[str, list[str]] = {
     "shell_exec": ["run", "execute", "cmd", "command", "shell", "bash", "powershell"],
@@ -77,6 +90,27 @@ _TOOL_ALIASES: dict[str, list[str]] = {
     "agent_list": ["list agents"],
     "agent_kill": ["kill agent", "stop agent"],
     "llm": ["llm", "ask model", "call model"],
+    # King Wen oracle and voice tools
+    "kingwen_oracle_consult":    ["oracle", "consult oracle", "king wen", "i ching", "hexagram", "consult"],
+    "kingwen_actionable_bridge": ["volition", "oracle translate", "hex action", "king wen action", "translate oracle"],
+    "kingwen_voice_score":       ["voice score", "reward score", "kingwen score", "tts score"],
+    "kingwen_voicebox_profile":  ["voicebox", "tts profile", "voice profile", "hex tts"],
+    "kingwen_tts_speak":         ["oracle speak", "king wen speak", "hex speak", "tts hex"],
+    "kingwen_voice_router":      ["voice router", "vhdl route", "oracle route", "hex route", "route hex"],
+    "kingwen_fault_vector":      ["fault vector", "hex fault", "oracle fault", "transition fault"],
+    "kingwen_schauberger_layer": ["schauberger", "implosion", "vortex", "egg resonance", "spiral tension"],
+    "kingwen_pseudopod_ingest":  ["ingest traces", "pseudopod", "train ingest", "learning ingest"],
+    "kingwen_corpus_validate":   ["corpus validate", "validate corpus", "schema check", "corpus check"],
+    "kingwen_training_export":   ["training export", "voicebox export", "training vectors", "export training"],
+    "kingwen_megatron_slice":    ["megatron", "training slice", "corpus slice", "wiki slice"],
+    "kingwen_fan_out_digest":    ["fan out", "learn batch", "wiki math", "fan out learn"],
+    # King Wen model selection
+    "kingwen_model_select":      ["model select", "oracle model", "hex model", "select model", "model for hex"],
+    "kingwen_model_list":        ["model list", "list models", "hex models", "oracle models"],
+    # King Wen narrative dispatch
+    "kingwen_narrative_generate": ["narrative", "generate narrative", "hex narrative", "oracle text", "code completion", "blueprint", "agent spec"],
+    "kingwen_narrative_dispatch": ["oracle dispatch", "narrative dispatch", "hex dispatch", "full pipeline"],
+    "kingwen_agent_spec_emit":    ["agent spec", "emit agent", "spawn spec", "volition agent", "agent yaml"],
 }
 
 # Pass type inference from tool name/category keywords.
@@ -92,6 +126,13 @@ _PASS_HINTS: list[tuple[tuple[str, ...], str]] = [
     (("digest_collect",), "structured_output"),
     (("think",), "structured_output"),
     (("calculator", "llm"), "structured_output"),
+    (("kingwen_oracle_consult", "kingwen_actionable_bridge", "kingwen_fault_vector",
+      "kingwen_voice_router", "kingwen_schauberger_layer"), "knowledge"),
+    (("kingwen_voice_score", "kingwen_voicebox_profile", "kingwen_tts_speak"), "audio"),
+    (("kingwen_pseudopod_ingest", "kingwen_corpus_validate", "kingwen_training_export",
+      "kingwen_megatron_slice", "kingwen_fan_out_digest"), "knowledge"),
+    (("kingwen_model_select", "kingwen_model_list"), "knowledge"),
+    (("kingwen_narrative_generate", "kingwen_narrative_dispatch", "kingwen_agent_spec_emit"), "knowledge"),
 ]
 
 

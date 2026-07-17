@@ -42,7 +42,7 @@ _TernarySpec.loader.exec_module(_TernaryModule)
 
 # Re-export immutable names so callers don't need to touch the raw module.
 from kingwen_ternary_tables_complete import (  # noqa: E402
-    EMOTIONAL_POOL,
+    VOICEBOX_VOICE_POOL as EMOTIONAL_POOL,  # re-exported under legacy name
     EMOTIONAL_WEIGHTS,
     HEXAGRAM_BASE,
     HEXAGRAM_INJECTION_SITE,

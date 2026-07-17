@@ -51,14 +51,18 @@ def _consult_worker(
     session_id: str,
     emotional_input: int,
     timeout: float = 30.0,
+    vision_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "text": text,
+        "session_id": session_id,
+        "emotional_input": emotional_input,
+    }
+    if vision_data is not None:
+        payload["vision_data"] = vision_data
     return _http_request_json(
         f"{_KINGWEN_WORKER_URL}/consult",
-        {
-            "text": text,
-            "session_id": session_id,
-            "emotional_input": emotional_input,
-        },
+        payload,
         timeout=timeout,
     )
 
@@ -160,6 +164,7 @@ def _get_cartesia_adapter() -> Any:
 
 def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, Any]:
     errors = []
+    tried = set()
     try:
         audio = _tts_worker(text, speaker)
         if audio:
@@ -171,6 +176,7 @@ def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, 
             }
     except Exception as exc:
         errors.append(f"kingwen-worker:{exc}")
+    tried.add("kingwen_worker")
 
     try:
         backend = _get_cloudflare_tts()
@@ -185,6 +191,7 @@ def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, 
             }
     except Exception as exc:
         errors.append(f"cloudflare:{exc}")
+    tried.add("cloudflare_ai")
 
     try:
         adapter = _get_cartesia_adapter()
@@ -204,6 +211,39 @@ def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, 
             }
     except Exception as exc:
         errors.append(f"cartesia:{exc}")
+    tried.add("cartesia")
+
+    # Fallback: try additional available backends from the registry in order.
+    try:
+        from openjarvis.speech.backend_registry import available_backends
+        for desc in available_backends():
+            name = desc.get("name")
+            if name in tried or not desc.get("available"):
+                continue
+            try:
+                mod = __import__(desc["module_path"], fromlist=[desc["class_name"]])
+                cls = getattr(mod, desc["class_name"])
+                instance = cls() if callable(cls) else cls
+                if hasattr(instance, "health") and not instance.health():
+                    continue
+                synthesize_fn = getattr(instance, "synthesize", None)
+                if not callable(synthesize_fn):
+                    continue
+                result = synthesize_fn(text=text)
+                audio = getattr(result, "audio", None) or (
+                    result.get("audio") if isinstance(result, dict) else None
+                )
+                if audio:
+                    return {
+                        "audio": audio,
+                        "backend": name,
+                        "speaker": speaker,
+                        "model": name,
+                    }
+            except Exception:
+                continue
+    except Exception:
+        pass
 
     return {
         "audio": None,
@@ -215,6 +255,15 @@ def _synthesize(text: str, speaker: str, vector: Dict[str, float]) -> Dict[str, 
 # ---------------------------------------------------------------------------
 # Playback — closes the oracle-to-speaker circuit
 # ---------------------------------------------------------------------------
+def _playback_instructions_for(porosity: float | None) -> dict:
+    porosity_value = 0.35 if porosity is None else float(porosity)
+    if porosity_value < 0.3:
+        return {"level": "low", "route": "default", "action": "play_once"}
+    if porosity_value < 0.8:
+        return {"level": "medium", "route": "secondary", "action": "loop_soft"}
+    return {"level": "high", "route": "network", "action": "broadcast"}
+
+
 def _play_audio_path(audio_path: str, porosity: float | None = None) -> bool:
     """Play an audio artifact through the local system.
 
@@ -352,6 +401,7 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
       scenes: optional scene-shaped metadata list for expressive rendering
       tool_hint: optional downstream tool/action hint
       rule: short explanation for audit/training
+      vision_block: optional vision facts when consult includes parsed image data
     """
     tongue = consult.get("emotional_tongue") or {}
     raw = tongue.get("training_weight_vectors") or {}
@@ -367,6 +417,19 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
     porosity_value = 0.35 if porosity is None else float(porosity)
     trajectory = (consult.get("trajectory") or "still").lower()
     agree = consult.get("phase_temporal") or consult.get("agree_temporal") or "present"
+
+    vision_block = None
+    if consult.get("_vision"):
+        _v = consult["_vision"]
+        sf = _v.get("scene_facts") or {}
+        vision_block = {
+            "width": _v.get("width"),
+            "height": _v.get("height"),
+            "part_count": sf.get("part_count"),
+            "visual_prompts": sf.get("visual_prompts") or [],
+            "palette": _v.get("palette") or [],
+            "labeled_regions": _v.get("labeled_regions") or [],
+        }
 
     # Default to chat
     mode = "chat"
@@ -395,6 +458,14 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
         tool_hint = "begin"
         rule = "whimsy_narrative"
 
+    # Vision-aware adjustment: if image shows actionable structure,
+    # prefer do mode when coherence is already high.
+    if vision_block and vision_block.get("part_count") and int(vision_block["part_count"]) > 0:
+        if mode == "chat" and vector["coherence"] >= 0.5:
+            mode = "do"
+            tool_hint = tool_hint or "inspect"
+            rule = "vision_coherent_execute"
+
     # Text selection keeps minimal map on do path, richer text on chat path
     if mode == "do":
         text = {
@@ -420,7 +491,7 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
                 "darkTone": vector["darkTone"],
                 "coherence": vector["coherence"],
             },
-            "voiceStatus": "ready" if mode == "chat" else "action",
+            "voice_status": "ready" if mode == "chat" else "action",
         }
     ]
 
@@ -434,6 +505,7 @@ def _kingwen_router(consult: Dict[str, Any], user_text: str) -> Dict[str, Any]:
         "porosity": porosity_value,
         "trajectory": trajectory,
         "agree_temporal": agree,
+        "vision_block": vision_block,
     }
 
 
@@ -484,6 +556,7 @@ def oracle_speak(
     text_source: str = "unified_weave",
     session_id: str = "openjarvis",
     emotional_input: int,
+    vision_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Run consult → synthesize → write artifact. Returns result dict."""
     _ensure_voice_reward_sidecar()
@@ -495,6 +568,7 @@ def oracle_speak(
             user_text,
             session_id=session_id,
             emotional_input=emotional_input,
+            vision_data=vision_data,
         )
     except Exception as exc:
         return _error_result(f"Worker consult failed: {exc}", user_text, text_source)
@@ -570,6 +644,48 @@ def oracle_speak(
             )
         except (TypeError, ValueError):
             hexagram_id = 0
+
+    # ------------------------------------------------------------------
+    # VHDL-mined voice router: priority routing + constraint masking +
+    # deliberation window + CRIT countdown. King Wen remains the voice;
+    # this layer decides whether the voice should be heard, held, or
+    # forced to a safe default.
+    # ------------------------------------------------------------------
+    _voice_router = _ensure_voice_router()
+    _router_eval = _voice_router.evaluate_advice(
+        consult,
+        user_direct_input=bool(user_text.strip()),
+        safety_ok=True,
+        sensor_variance=abs(float(consult.get("consensus_vector", {}).get("voiceWeight", 0.5) or 0.5) - 0.5),
+    )
+    consult.setdefault("_voice_router", _router_eval)
+    consult["voice_router_advice_hexagram"] = _router_eval.get("advice_hexagram")
+    consult["voice_router_mode"] = _router_eval.get("voice_mode")
+    consult["voice_router_priority"] = _router_eval.get("priority")
+    consult["voice_router_hold"] = _router_eval.get("hold_in_state")
+    consult["voice_router_deliberation"] = _router_eval.get("deliberation")
+    consult["voice_router_fault_vector"] = int(_router_eval.get("fault_vector", 0) or 0)
+    consult["voice_router_crit_countdown"] = _router_eval.get("crit_countdown")
+    consult["voice_router_reasoning"] = _router_eval.get("reasoning")
+
+    # ------------------------------------------------------------------
+    # Vision bridge: carry optional image-analysis facts through the same
+    # King Wen route without changing chat/do behavior.
+    # ------------------------------------------------------------------
+    if vision_data is not None:
+        consult.setdefault("_vision", {})
+        consult["_vision"].update(
+            {
+                "width": vision_data.get("width"),
+                "height": vision_data.get("height"),
+                "palette": vision_data.get("palette"),
+                "labeled_regions": vision_data.get("labeled_regions"),
+                "scene_facts": vision_data.get("scene_facts"),
+            }
+        )
+        consult["source_ingestion"] = consult.get("source_ingestion") or "vision://ingest"
+        consult.setdefault("_sources", []).append("vision")
+
     route = _kingwen_router(consult, user_text)
     text_spoken = route["text"]
     speaker = _select_speaker(vector)
@@ -724,6 +840,33 @@ def oracle_speak(
         "tool_hint": route.get("tool_hint"),
         "rule": route.get("rule"),
         "scenes": route.get("scenes"),
+        "director_payload": {
+            "source": "kingwen_router",
+            "consensus_hexagram_id": consult.get("consensus_hexagram_id"),
+            "consensus_yao": consult.get("consensus_yao"),
+            "consensus_temporal": consult.get("consensus_temporal"),
+            "emotional_input": consult.get("emotional_input"),
+            "porosity": porosity,
+            "trajectory": trajectory,
+            "agree_temporal": agree_temporal,
+            "voice_vector": vector,
+            "scene": {
+                "description": text_spoken,
+                "visualPrompt": consult.get("unified_weave") or consult.get("trainingNotes") or user_text,
+                "styleInfluence": (route.get("scenes") or [{}])[0].get("styleInfluence") if route.get("scenes") else "",
+                "prosody": {
+                    "chaos": vector.get("chaos", 0.0),
+                    "whimsy": vector.get("whimsy", 0.0),
+                    "darkTone": vector.get("darkTone", 0.0),
+                    "coherence": vector.get("coherence", 0.0),
+                    "voiceWeight": vector.get("voiceWeight", 0.0),
+                },
+                "voicePath": final_path,
+                "voiceStatus": "ready" if compliance == "compliant" else "reject",
+                "imagePath": consult.get("source_ingestion") if str(consult.get("source_ingestion", "")).startswith("vision://") else None,
+            },
+            "playback_instructions": _playback_instructions_for(porosity),
+        },
     }
     try:
         result["played"] = _play_audio_path(final_path, porosity=porosity)
@@ -858,3 +1001,21 @@ def _ensure_voice_reward_sidecar() -> None:
         _started_voice_reward_sidecar = True
     except Exception as exc:
         LOGGER.warning("Voice reward sidecar failed to start: %s", exc)
+
+
+# --------------------------------------------------------------------------- #
+# VHDL-mined voice router singleton                                           #
+# --------------------------------------------------------------------------- #
+_voice_router_instance: object | None = None
+
+
+def _ensure_voice_router() -> object:
+    global _voice_router_instance
+    if _voice_router_instance is None:
+        try:
+            from kingwen_voice_router import KingWenVoiceRouter
+
+            _voice_router_instance = KingWenVoiceRouter()
+        except Exception:
+            _voice_router_instance = None
+    return _voice_router_instance

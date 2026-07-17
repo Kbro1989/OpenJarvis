@@ -107,6 +107,12 @@ def serve(
     agent_name: str | None,
 ) -> None:
     """Start the OpenAI-compatible API server."""
+    try:
+        from openjarvis.core.env_integration import inject_hermes_env
+        inject_hermes_env()
+    except Exception as exc:
+        logger.debug("Hermes dotenv injection failed: %s", exc)
+
     print_banner(quiet=(ctx.obj or {}).get("quiet", False))
     console = Console(stderr=True)
 
@@ -163,6 +169,34 @@ def serve(
         bus.subscribe(EventType.KINGWEN_CONSENSUS_UPDATE, _on_kingwen_consensus)
     except Exception as exc:
         logger.debug("Swarm store init failed: %s", exc)
+
+    # /learn auto-ingest: write novel journey edges to cache/learn-ingest.jsonl
+    learn_ingest_path = None
+    try:
+        from pathlib import Path as _Path
+        from openjarvis.core.events import EventType as _EventType
+        _learn_base = _Path(config.data_dir or "~/.openjarvis").expanduser()
+        _learn_base.mkdir(parents=True, exist_ok=True)
+        learn_ingest_path = _learn_base / "learn-ingest.jsonl"
+
+        def _on_learn_auto_ingest(event) -> None:
+            try:
+                if not learn_ingest_path:
+                    return
+                import json as _json
+                with open(learn_ingest_path, "a", encoding="utf-8") as _f:
+                    _f.write(_json.dumps({
+                        "ts": event.timestamp,
+                        "query": event.data.get("query"),
+                        "novel_edge_count": event.data.get("novel_edge_count"),
+                        "novel_edges": event.data.get("novel_edges"),
+                    }, ensure_ascii=False) + "\n")
+            except Exception as exc:
+                logger.debug("Learn ingest write failed: %s", exc)
+
+        bus.subscribe(_EventType.LEARN_AUTO_INGEST, _on_learn_auto_ingest)
+    except Exception as exc:
+        logger.debug("Learn ingest init failed: %s", exc)
 
     # Select with the model we'll actually serve so an engine that can't
     # serve it (e.g. the cloud fallback without the matching provider key) is

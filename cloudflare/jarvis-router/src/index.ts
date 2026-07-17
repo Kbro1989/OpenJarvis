@@ -99,6 +99,7 @@ function healthResponse(): Response {
     },
     routes: [
       "POST /kingwen/consult",
+      "POST /kingwen/blueprint",
       "WS   /kingwen/ws",
       "POST /jarvis/wake",
       "POST /jarvis/intent",
@@ -117,6 +118,15 @@ async function kingwenConsult(env: Env, req: Request): Promise<Response> {
   return proxyJson(
     env.KINGWEN_WORKER,
     "https://kingwen-oracle.kristain33rs.workers.dev/consult",
+    req,
+    { _source: "jarvis-router", _backend: "kingwen-oracle" },
+  );
+}
+
+async function kingwenBlueprint(env: Env, req: Request): Promise<Response> {
+  return proxyJson(
+    env.KINGWEN_WORKER,
+    "https://kingwen-oracle.kristain33rs.workers.dev/blueprint",
     req,
     { _source: "jarvis-router", _backend: "kingwen-oracle" },
   );
@@ -255,6 +265,9 @@ export default {
 
     if (path === "/kingwen/consult" && req.method === "POST") {
       return kingwenConsult(env, req);
+    }
+    if (path === "/kingwen/blueprint" && req.method === "POST") {
+      return kingwenBlueprint(env, req);
     }
     if (path === "/kingwen/ws") {
       return kingwenWs(env, req);
