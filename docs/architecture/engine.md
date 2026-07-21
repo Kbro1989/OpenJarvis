@@ -120,6 +120,34 @@ All providers produce the same output format consumed by agents:
 | **Uzu** | `uzu` | OpenAI-compatible | 8000 | Varies | Uzu inference runtime |
 | **Apple FM** | `apple_fm` | OpenAI-compatible | 8079 | Apple Silicon | Apple Foundation Model on-device inference |
 | **LiteLLM** | `litellm` | OpenAI-compatible | — | No | Unified proxy to 100+ LLM providers |
+
+---
+
+## Sovereign Runtime
+
+OpenJarvis includes a sovereign runtime layer modeled after POG2's neurological/biological substrate. It runs alongside the inference runtime and provides self-diagnosis, threat detection, and biological pulse monitoring.
+
+### Sovereign Components
+
+| Component | Path | Purpose |
+|-----------|------|---------|
+| `JarvisNeurologicalMap` | `src/openjarvis/core/neurological_map.py` | 64-node voice/domain registry derived from King Wen immutable tables; self-referential activation tracking |
+| `CognitiveImmunologyEmergency` | `src/openjarvis/sovereign/immunology.py` | Scans for prompt injection, external binaries, role collapse, data exfiltration; writes `emergency/LOCKDOWN_*.json` on critical threats |
+| `SovereignCircuitBreaker` | `src/openjarvis/sovereign/immunology.py` | Metabolic protection: trips to OPEN on failure threshold, falls back to safe mode |
+| `BiologicalPulseMonitor` | `src/openjarvis/sovereign/pulse_monitor.py` | 640ms biological pulse: first-pass full telemetry, then lightweight NodeTester health audit; starts sidecars for offline nodes |
+| `NodeTester` | `src/openjarvis/sovereign/immunology.py` | Audits all 64 neurological nodes; returns `ONLINE`/`DEGRADED`/`OFFLINE` health per node |
+
+### Boot Sequence
+
+1. `JarvisNeurologicalMap` initializes 64 nodes from immutable tables with real voice pools, domains, and emotional vectors.
+2. `CognitiveImmunologyEmergency` loads sovereign authors/core files and begins scanning.
+3. `BiologicalPulseMonitor.start()` runs first-pass disk/build/error telemetry, then switches to lightweight 64-node health pulses.
+4. On `OFFLINE`/`DEGRADED` node detection, sidecar bring-up is triggered.
+5. On critical threat detection, `LOCKDOWN_<timestamp>.json` is written to `emergency/`.
+
+### Sovereign Knock
+
+When an external agent touches a core file path, `CognitiveImmunologyEmergency` records the modification, traces the agent chain via git history, and escalates to `LOCKDOWN` if execution intent is detected on core files (`OrchestrateEngine.ts`, `TernaryRouter.ts`, `HexagramManager.ts`, etc.).
 | **Cloud** | `cloud` | Provider SDKs | — | No | OpenAI, Anthropic, Google API access |
 
 ### Ollama

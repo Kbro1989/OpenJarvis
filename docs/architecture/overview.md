@@ -98,113 +98,119 @@ Each registry provides:
 
 ```
 src/openjarvis/
-    core/               Core infrastructure shared by all primitives
-        registry.py         RegistryBase[T] and typed subclass registries
-        types.py            Message, ModelSpec, Trace, TelemetryRecord, etc.
-        config.py           JarvisConfig, hardware detection, TOML loading
-        events.py           EventBus pub/sub system (EventType, Event)
+  core/            Core infrastructure shared by all primitives
+      registry.py         RegistryBase[T] and typed subclass registries
+      types.py            Message, ModelSpec, Trace, TelemetryRecord, etc.
+      config.py           JarvisConfig, hardware detection, TOML loading
+      events.py           EventBus pub/sub system (EventType, Event)
 
-    intelligence/       Intelligence primitive -- model definition & catalog
-        model_catalog.py    BUILTIN_MODELS list, merge_discovered_models()
-        _stubs.py           (backward-compat shim -- re-exports from learning._stubs)
-        router.py           (backward-compat shim -- re-exports from learning.router)
+  intelligence/       Intelligence primitive -- model definition & catalog
+      model_catalog.py    BUILTIN_MODELS list, merge_discovered_models()
+      _stubs.py           (backward-compat shim -- re-exports from learning._stubs)
+      router.py           (backward-compat shim -- re-exports from learning.router)
 
-    engine/             Engine primitive -- inference runtime backends
-        _stubs.py           InferenceEngine ABC
-        _base.py            EngineConnectionError, messages_to_dicts()
-        _openai_compat.py   Shared base for OpenAI-compatible engines
-        _discovery.py       discover_engines(), discover_models(), get_engine()
-        ollama.py           Ollama backend (native HTTP API)
-        openai_compat_engines.py  Data-driven registration (vLLM, SGLang, llama.cpp, MLX, LM Studio)
-        cloud.py            Cloud backend (OpenAI, Anthropic, Google SDKs)
+  engine/             Engine primitive -- inference runtime backends
+      _stubs.py           InferenceEngine ABC
+      _base.py            EngineConnectionError, messages_to_dicts()
+      _openai_compat.py   Shared base for OpenAI-compatible engines
+      _discovery.py       discover_engines(), discover_models(), get_engine()
+      ollama.py           Ollama backend (native HTTP API)
+      openai_compat_engines.py  Data-driven registration (vLLM, SGLang, llama.cpp, MLX, LM Studio)
+      cloud.py            Cloud backend (OpenAI, Anthropic, Google SDKs)
 
-    agents/             Agentic Logic primitive -- pluggable agents
-        _stubs.py           BaseAgent ABC, ToolUsingAgent, AgentContext, AgentResult
-        simple.py           SimpleAgent (single-turn, no tools)
-        orchestrator.py     OrchestratorAgent (multi-turn tool loop, function_calling + structured)
-        native_react.py     NativeReActAgent (Thought-Action-Observation loop)
-        native_openhands.py NativeOpenHandsAgent (CodeAct-style code execution)
-        rlm.py              RLMAgent (recursive LM with persistent REPL)
-        openhands.py        OpenHandsAgent (wraps real openhands-sdk)
-        react.py            Backward-compat shim (re-exports NativeReActAgent as ReActAgent)
-        claude_code.py      ClaudeCodeAgent (Claude Agent SDK via Node.js subprocess)
-        claude_code_runner/ Bundled Node.js runner for the Claude Agent SDK
+  agents/             Agentic Logic primitive -- pluggable agents
+      _stubs.py           BaseAgent ABC, ToolUsingAgent, AgentContext, AgentResult
+      simple.py           SimpleAgent (single-turn, no tools)
+      orchestrator.py     OrchestratorAgent (multi-turn tool loop, function_calling + structured)
+      native_react.py     NativeReActAgent (Thought-Action-Observation loop)
+      native_openhands.py NativeOpenHandsAgent (CodeAct-style code execution)
+      rlm.py              RLMAgent (recursive LM with persistent REPL)
+      openhands.py        OpenHandsAgent (wraps real openhands-sdk)
+      react.py            Backward-compat shim (re-exports NativeReActAgent as ReActAgent)
+      claude_code.py      ClaudeCodeAgent (Claude Agent SDK via Node.js subprocess)
+      claude_code_runner/ Bundled Node.js runner for the Claude Agent SDK
 
-    sandbox/            Container sandbox for isolated agent execution
-        runner.py           ContainerRunner (Docker/Podman lifecycle), SandboxedAgent wrapper
-        mount_security.py   MountAllowlist, validate_mounts() (path security)
+  sandbox/            Container sandbox for isolated agent execution
+      runner.py           ContainerRunner (Docker/Podman lifecycle), SandboxedAgent wrapper
+      mount_security.py   MountAllowlist, validate_mounts() (path security)
 
-    memory/             Memory primitive -- persistent searchable storage
-        _stubs.py           MemoryBackend ABC, RetrievalResult
-        sqlite.py           SQLite/FTS5 backend (zero-dependency default)
-        faiss_backend.py    FAISS dense retrieval backend
-        colbert_backend.py  ColBERTv2 late interaction backend
-        bm25.py             BM25 (Okapi) term-frequency backend
-        hybrid.py           Hybrid RRF fusion backend
-        chunking.py         ChunkConfig, Chunk, chunk_text()
-        ingest.py           Document ingestion (file reading, directory walking)
-        context.py          Context injection (inject_context, source attribution)
-        embeddings.py       Embedder ABC, SentenceTransformerEmbedder
+  memory/             Memory primitive -- persistent searchable storage
+      _stubs.py           MemoryBackend ABC, RetrievalResult
+      sqlite.py           SQLite/FTS5 backend (zero-dependency default)
+      faiss_backend.py    FAISS dense retrieval backend
+      colbert_backend.py  ColBERTv2 late interaction backend
+      bm25.py             BM25 (Okapi) term-frequency backend
+      hybrid.py           Hybrid RRF fusion backend
+      chunking.py         ChunkConfig, Chunk, chunk_text()
+      ingest.py           Document ingestion (file reading, directory walking)
+      context.py          Context injection (inject_context, source attribution)
+      embeddings.py       Embedder ABC, SentenceTransformerEmbedder
 
-    learning/           Learning system -- router policies & rewards
-        _stubs.py           RouterPolicy ABC, QueryAnalyzer ABC, RewardFunction ABC, RoutingContext
-        router.py           HeuristicRouter, DefaultQueryAnalyzer, build_routing_context()
-        heuristic_policy.py Wires HeuristicRouter into RouterPolicyRegistry
-        trace_policy.py     TraceDrivenPolicy (learns from trace outcomes)
-        grpo_policy.py      GRPORouterPolicy (stub for future RL)
-        heuristic_reward.py HeuristicRewardFunction (latency/cost/efficiency)
+  learning/           Learning system -- router policies & rewards
+      _stubs.py           RouterPolicy ABC, QueryAnalyzer ABC, RewardFunction ABC, RoutingContext
+      router.py           HeuristicRouter, DefaultQueryAnalyzer, build_routing_context()
+      heuristic_policy.py Wires HeuristicRouter into RouterPolicyRegistry
+      trace_policy.py     TraceDrivenPolicy (learns from trace outcomes)
+      grpo_policy.py      GRPORouterPolicy (stub for future RL)
+      heuristic_reward.py HeuristicRewardFunction (latency/cost/efficiency)
 
-    traces/             Trace system -- interaction recording
-        store.py            TraceStore (SQLite persistence)
-        collector.py        TraceCollector (wraps agents, records traces)
-        analyzer.py         TraceAnalyzer (aggregated statistics)
+  traces/             Trace system -- interaction recording
+      store.py            TraceStore (SQLite persistence)
+      collector.py        TraceCollector (wraps agents, records traces)
+      analyzer.py         TraceAnalyzer (aggregated statistics)
 
-    tools/              Tool system -- pluggable tool implementations
-        _stubs.py           BaseTool ABC, ToolSpec, ToolExecutor
-        calculator.py       CalculatorTool (ast-based safe eval)
-        think.py            ThinkTool (reasoning scratchpad)
-        retrieval.py        RetrievalTool (memory search)
-        llm.py              LLMTool (sub-model calls)
-        file_read.py        FileReadTool (safe file reading)
+  tools/              Tool system -- pluggable tool implementations
+      _stubs.py           BaseTool ABC, ToolSpec, ToolExecutor
+      calculator.py       CalculatorTool (ast-based safe eval)
+      think.py            ThinkTool (reasoning scratchpad)
+      retrieval.py        RetrievalTool (memory search)
+      llm.py              LLMTool (sub-model calls)
+      file_read.py        FileReadTool (safe file reading)
 
-    telemetry/          Telemetry -- inference metrics recording
-        store.py            TelemetryStore (SQLite, EventBus subscription)
-        aggregator.py       TelemetryAggregator (per-model/engine stats)
-        wrapper.py          instrumented_generate() wrapper
+  telemetry/          Telemetry -- inference metrics recording
+      store.py            TelemetryStore (SQLite, EventBus subscription)
+      aggregator.py       TelemetryAggregator (per-model/engine stats)
+      wrapper.py          instrumented_generate() wrapper
 
-    server/             API server -- OpenAI-compatible HTTP API
-        app.py              FastAPI application factory
-        routes.py           /v1/chat/completions, /v1/models, /health
+  server/             API server -- OpenAI-compatible HTTP API
+      app.py              FastAPI application factory
+      routes.py           /v1/chat/completions, /v1/models, /health
 
-    bench/              Benchmarking framework
-        _stubs.py           BaseBenchmark ABC, BenchmarkSuite
-        latency.py          LatencyBenchmark (per-call latency)
-        throughput.py       ThroughputBenchmark (tokens/second)
+  bench/              Benchmarking framework
+      _stubs.py           BaseBenchmark ABC, BenchmarkSuite
+      latency.py          LatencyBenchmark (per-call latency)
+      throughput.py       ThroughputBenchmark (tokens/second)
 
-    security/           Security guardrails
-        _stubs.py           BaseScanner ABC
-        types.py            ThreatLevel, RedactionMode, ScanFinding, ScanResult
-        scanner.py          SecretScanner, PIIScanner
-        guardrails.py       GuardrailsEngine (wraps InferenceEngine)
-        file_policy.py      is_sensitive_file(), DEFAULT_SENSITIVE_PATTERNS
-        audit.py            AuditLogger (SQLite security events)
+  security/           Security guardrails
+      _stubs.py           BaseScanner ABC
+      types.py            ThreatLevel, RedactionMode, ScanFinding, ScanResult
+      scanner.py          SecretScanner, PIIScanner
+      guardrails.py       GuardrailsEngine (wraps InferenceEngine)
+      file_policy.py      is_sensitive_file(), DEFAULT_SENSITIVE_PATTERNS
+      audit.py            AuditLogger (SQLite security events)
 
-    channels/           Channel messaging
-        _stubs.py           BaseChannel ABC, ChannelMessage, ChannelStatus
-        whatsapp_baileys.py WhatsAppBaileysChannel (Baileys protocol via Node.js bridge)
-        whatsapp_baileys_bridge/ Bundled Node.js Baileys bridge
+  channels/           Channel messaging
+      _stubs.py           BaseChannel ABC, ChannelMessage, ChannelStatus
+      whatsapp_baileys.py WhatsAppBaileysChannel (Baileys protocol via Node.js bridge)
+      whatsapp_baileys_bridge/ Bundled Node.js Baileys bridge
 
-    scheduler/          Task scheduling system
-        scheduler.py        TaskScheduler (cron/interval/once, background polling)
-        store.py            SchedulerStore (SQLite persistence + run logs)
-        tools.py            MCP scheduler tools (schedule_task, list, pause, resume, cancel)
+  scheduler/          Task scheduling system
+      scheduler.py        TaskScheduler (cron/interval/once, background polling)
+      store.py            SchedulerStore (SQLite persistence + run logs)
+      tools.py            MCP scheduler tools (schedule_task, list, pause, resume, cancel)
 
-    cli/                CLI commands (Click-based)
-        ask.py              jarvis ask -- query the assistant
-        serve.py            jarvis serve -- start API server
+  cli/                CLI commands (Click-based)
+      ask.py              jarvis ask -- query the assistant
+      serve.py            jarvis serve -- start API server
 
-    sdk.py              Jarvis class -- high-level Python SDK
-    mcp/                MCP (Model Context Protocol) layer
+  sdk.py              Jarvis class -- high-level Python SDK
+  mcp/                MCP (Model Context Protocol) layer
+
+src/openjarvis/
+  core/            NeurologicalMap, JarvisNeurologicalMap, NodeTester health audit
+  emotion/         King Wen completion injection, expanded consensus batch save strings
+  sovereign/       CognitiveImmunologyEmergency, SovereignCircuitBreaker, BiologicalPulseMonitor
+  slash/           Slash command registry, handlers, integration
 ```
 
 ---

@@ -21,6 +21,12 @@ import os as _os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from openjarvis.core.session_clock_bridge import (
+    consciousness_state,
+    consciousness_tick,
+    get_consciousness_clock,
+)
+
 
 class KingWenEmotionProvider:
     """Deterministic 64-hex emotional state and voice-selection provider."""
@@ -87,8 +93,7 @@ class KingWenEmotionProvider:
         digest = hashlib.sha256(text.encode("utf-8")).digest()
         return int.from_bytes(digest[:8], "big")
 
-    @staticmethod
-    def _load_collapse_recorded() -> Dict[str, Any] | None:
+    def _load_collapse_recorded(self) -> Dict[str, Any] | None:
         try:
             env_path = _os.environ.get("KING_WEN_IMMUTABLE_TABLES")
             if env_path:
@@ -96,9 +101,6 @@ class KingWenEmotionProvider:
                 if candidate.exists():
                     import json as _json
                     return _json.loads(candidate.read_text(encoding="utf-8"))
-            # Fallback: resolve from this file's location on disk.
-            # __file__ = <repo>/src/openjarvis/emotion/kingwen.py
-            # parents[4] = <repo>/.. = Desktop
             base = Path(__file__).resolve().parents[4]
             for name in (
                 "KING-WEN-I-CHING-IMMUTABLE-TABLES",
@@ -111,6 +113,210 @@ class KingWenEmotionProvider:
         except Exception:
             pass
         return None
+
+    def _load_ternary_expansion(self) -> Dict[str, Any] | None:
+        try:
+            env_path = _os.environ.get("KING_WEN_IMMUTABLE_TABLES")
+            if env_path:
+                candidate = Path(env_path) / "scripts" / "ternary_full_expansion.json"
+                if candidate.exists():
+                    import json as _json
+                    return _json.loads(candidate.read_text(encoding="utf-8"))
+            base = Path(__file__).resolve().parents[4]
+            for name in (
+                "KING-WEN-I-CHING-IMMUTABLE-TABLES",
+                "KING-WEN-I-CHING-I-MMUTABLE-TABLES",
+            ):
+                candidate = base / name / "scripts" / "ternary_full_expansion.json"
+                if candidate.exists():
+                    import json as _json
+                    return _json.loads(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+        return None
+
+    def _resolve_expansion_source(self, emotional_input: int) -> Dict[str, Any]:
+        """Return the highest-fidelity expansion source available.
+
+        Priority:
+        1. ternary_full_expansion.json  — 729 hexagrams / 5832 resolved states
+        2. collapse_full_128_output.json — 64 hexagrams / 512 resolved states
+        3. live fallback build from registry + weights
+        """
+        ternary = self._load_ternary_expansion()
+        if ternary:
+            return ternary
+        recorded = self._load_collapse_recorded()
+        if recorded:
+            return recorded
+        return {"expanded": [], "resolved": [], "consensus": {}, "canonical_map": {}}
+
+    def _ternary_full_expansion(self, emotional_input: int) -> Dict[str, Any]:
+        data = self._load_ternary_expansion()
+        if not data:
+            return {"expanded": [], "resolved": [], "consensus": {}, "canonical_map": {}}
+        trigrams = data.get("trigrams", {})
+        hexagrams = data.get("hexagrams", {})
+        resolved = data.get("resolved", {})
+        weights = self._weights
+        registry = self._registry
+        expanded = []
+        canonical_map = {}
+        for hid_str, hex_entry in hexagrams.items():
+            hid = int(hid_str)
+            canonical_id = hex_entry.get("canonical_id")
+            if canonical_id is not None:
+                canonical_map.setdefault(int(canonical_id), hid)
+            record = None
+            if canonical_id is not None:
+                record = registry.get(str(int(canonical_id)))
+            if record is None:
+                record = {
+                    "name": "",
+                    "chinese": "",
+                    "binary": "".join(str(x) for x in hex_entry.get("vector", [])),
+                    "unicode": "",
+                    "upper_trigram": "",
+                    "lower_trigram": "",
+                    "category": "",
+                    "action": "",
+                }
+            weight_entry = weights.get(str(canonical_id or hid), {})
+            phases = []
+            for pb in range(8):
+                rid = hid * 8 + pb
+                r = resolved.get(str(rid)) or {}
+                tongue = self._resolve_emotion_tongue(canonical_id or hid, "ternary")
+                phases.append({
+                    "hexagram_id": hid,
+                    "phase_bits": pb,
+                    "phase_temporal": r.get("phase_temporal", ""),
+                    "phase_polarity": r.get("phase_polarity", ""),
+                    "phase_description": r.get("phase_description", ""),
+                    "winning_entry": {},
+                    "emotional_tongue": tongue,
+                    "porosity": float(tongue.get("porosity", 0.0) or 0.0),
+                    "vectors": {
+                        "voiceWeight": float(weight_entry.get("voiceWeight", 0.0)),
+                        "coherence": float(weight_entry.get("coherence", 0.0)),
+                        "chaos": float(weight_entry.get("chaos", 0.0)),
+                        "whimsy": float(weight_entry.get("whimsy", 0.0)),
+                        "darkTone": float(weight_entry.get("darkTone", 0.0)),
+                    },
+                    "inject_site": self._resolve_inject_site(canonical_id or hid),
+                    "training_weight_vectors": tongue.get("training_weight_vectors", {}),
+                    "yao_vocabulary": {},
+                    "line_states": [],
+                    "sample_paths": [],
+                    "ternary_str": str(hid * 8 + pb),
+                    "ternary_lines_top_to_bottom": hex_entry.get("vector", []),
+                })
+            expanded.append({
+                "hexagram_id": hid,
+                "hexagram_symbols": record,
+                "phases": phases,
+                "trigram_vector": hex_entry.get("vector", []),
+                "upper_trigram_id": hex_entry.get("upper_trigram_id"),
+                "lower_trigram_id": hex_entry.get("lower_trigram_id"),
+                "is_canonical": bool(hex_entry.get("is_canonical")),
+                "canonical_id": canonical_id,
+            })
+        consensus = self._compute_ternary_consensus(expanded, emotional_input)
+        return {
+            "expanded": expanded,
+            "resolved": list(resolved.values()) if isinstance(resolved, dict) else [],
+            "consensus": consensus,
+            "canonical_map": canonical_map,
+        }
+
+    def _compute_ternary_consensus(self, expanded: list[Dict[str, Any]], emotional_input: int) -> Dict[str, Any]:
+        phases = [p for item in expanded for p in item.get("phases", [])]
+        hex_ids = [item.get("hexagram_id") or item.get("hexagram_symbols", {}).get("hexagram_id") for item in expanded]
+        phase_temporals = [p.get("phase_temporal") for p in phases if p.get("phase_temporal")]
+        phase_polarities = [p.get("phase_polarity") for p in phases if p.get("phase_polarity")]
+        porosities = [float(p.get("porosity", 0.0)) for p in phases]
+        voice = [float(p.get("vectors", {}).get("voiceWeight", 0.0)) for p in phases]
+        coherence = [float(p.get("vectors", {}).get("coherence", 0.0)) for p in phases]
+        chaos = [float(p.get("vectors", {}).get("chaos", 0.0)) for p in phases]
+        whimsy = [float(p.get("vectors", {}).get("whimsy", 0.0)) for p in phases]
+        dark = [float(p.get("vectors", {}).get("darkTone", 0.0)) for p in phases]
+        inject_sites = [p.get("inject_site", {}) for p in phases if p.get("inject_site")]
+        primary_pools = [str(x.get("primary_pool", "")) for x in inject_sites if x.get("primary_pool")]
+        secondary_pools = [str(x.get("secondary_pool", "")) for x in inject_sites if x.get("secondary_pool")]
+        primary_porosities = [float(x.get("porosity", 0.0)) for x in inject_sites if x.get("porosity") is not None]
+        reasons = [str(x.get("reason", "")) for x in inject_sites if x.get("reason")]
+        ternary_agg: Dict[int, Dict[str, int]] = {}
+        yao_label_agg: Dict[int, Dict[str, int]] = {}
+        direction_counts: Dict[str, int] = {}
+        past_states: list[str] = []
+        present_states: list[str] = []
+        future_states: list[str] = []
+        for p in phases:
+            for entry in (p.get("line_states") or []):
+                if not isinstance(entry, dict):
+                    continue
+                pos = int(entry.get("position") or 0)
+                yao_key = str(entry.get("yao_key") or "")
+                yao_label = str(entry.get("yao_label") or "")
+                if pos:
+                    pos_map = ternary_agg.setdefault(pos, {})
+                    pos_map[yao_key] = pos_map.get(yao_key, 0) + 1
+                    if yao_label:
+                        label_pos_map = yao_label_agg.setdefault(pos, {})
+                        label_pos_map[yao_label] = label_pos_map.get(yao_label, 0) + 1
+            tongue = p.get("emotional_tongue") or {}
+            states = tongue.get("states") or {}
+            past_states.append(str(states.get("past", "")))
+            present_states.append(str(states.get("present", "")))
+            future_states.append(str(states.get("future", "")))
+            direction_counts[str(tongue.get("direction", ""))] = direction_counts.get(str(tongue.get("direction", "")), 0) + 1
+        consensus_yao_mode: Dict[str, str] = {}
+        for pos, label_counts in yao_label_agg.items():
+            consensus_yao_mode[str(pos)] = max(label_counts, key=label_counts.__getitem__)
+        past_mode = self._mode([s for s in past_states if s]) if past_states else None
+        present_mode = self._mode([s for s in present_states if s]) if present_states else None
+        future_mode = self._mode([s for s in future_states if s]) if future_states else None
+        return {
+            "hexagram_id_mode": self._mode(hex_ids),
+            "phase_temporal_mode": self._mode(phase_temporals),
+            "phase_polarity_mode": self._mode(phase_polarities),
+            "porosity_mean": self._mean(porosities),
+            "porosity_median": self._median(porosities),
+            "porosity_mode": self._mode(porosities),
+            "primary_porosity_mean": self._mean(primary_porosities),
+            "primary_porosity_median": self._median(primary_porosities),
+            "primary_porosity_mode": self._mode(primary_porosities),
+            "vectors_mean": {
+                "voiceWeight": self._mean(voice),
+                "coherence": self._mean(coherence),
+                "chaos": self._mean(chaos),
+                "whimsy": self._mean(whimsy),
+                "darkTone": self._mean(dark),
+            },
+            "vectors_median": {
+                "voiceWeight": self._median(voice),
+                "coherence": self._median(coherence),
+                "chaos": self._median(chaos),
+                "whimsy": self._median(whimsy),
+                "darkTone": self._median(dark),
+            },
+            "vectors_mode": {
+                "voiceWeight": self._mode(voice),
+                "coherence": self._mode(coherence),
+                "chaos": self._mode(chaos),
+                "whimsy": self._mode(whimsy),
+                "darkTone": self._mode(dark),
+            },
+            "primary_pool_mode": self._mode(primary_pools),
+            "secondary_pool_mode": self._mode(secondary_pools),
+            "direction_mode": self._mode(list(direction_counts.keys())),
+            "yao_consensus": ternary_agg,
+            "yao_label_mode": consensus_yao_mode,
+            "past_mode": past_mode,
+            "present_mode": present_mode,
+            "future_mode": future_mode,
+            "reasons": reasons[:8],
+        }
 
     def _collapse(self, text: str, session_id: str, emotional_input: int) -> Dict[str, Any]:
         """Expand all 64 hexagrams × 8 phases from recorded output, then return consensus summary."""
@@ -166,6 +372,8 @@ class KingWenEmotionProvider:
                             "yao_vocabulary": item.get("yao_vocabulary") or {},
                             "line_states": item.get("line_states") or [],
                             "sample_paths": item.get("sample_paths") or [],
+                            "ternary_str": self._ternary_module.encode_hex_phase(hexagram_id, phase_bits) if self._ternary_module else "",
+                            "ternary_lines_top_to_bottom": self._resolve_ternary_lines_top_to_bottom(hexagram_id, phase_bits),
                         }
                     )
                 expanded.append({"hexagram_id": hexagram_id, "hexagram_symbols": record, "phases": hex_phases})
@@ -200,6 +408,8 @@ class KingWenEmotionProvider:
                             "yao_vocabulary": {},
                             "line_states": [],
                             "sample_paths": [],
+                            "ternary_str": self._ternary_module.encode_hex_phase(hexagram_id, phase_bits) if self._ternary_module else "",
+                            "ternary_lines_top_to_bottom": self._resolve_ternary_lines_top_to_bottom(hexagram_id, phase_bits),
                         }
                     )
                 expanded.append({"hexagram_id": hexagram_id, "hexagram_symbols": record, "phases": hex_phases})
@@ -225,11 +435,18 @@ class KingWenEmotionProvider:
                         if resolved_item.get("resolved_vector"):
                             phase_item["vectors"] = resolved_item.get("resolved_vector")
                         phase_item["checklist"] = resolved_item.get("checklist") or []
+                        phase_item.setdefault("ternary_str", "")
+                        phase_item.setdefault("ternary_lines_top_to_bottom", [])
 
         consensus = self._compute_consensus(expanded)
+        # Also flatten resolved states from recorded for full 512-state output
+        resolved_flat = []
+        if recorded.get("resolved"):
+            resolved_flat = recorded.get("resolved") or []
         return {
             "expanded": expanded,
             "consensus": consensus,
+            "resolved": resolved_flat,
             "source": "collapse_full_128",
         }
 
@@ -501,6 +718,19 @@ class KingWenEmotionProvider:
                 return direction
         return "neutral"
 
+    def _resolve_ternary_lines_top_to_bottom(self, hexagram_id: int, phase_bits: int) -> list[int]:
+        module = self._ternary_module
+        if module is None:
+            return []
+        try:
+            entry = module.decode_9bit(module.encode_hex_phase(hexagram_id, phase_bits))
+            ternary_lines = entry.get("ternary_lines_top_to_bottom") or []
+            if ternary_lines:
+                return [int(x) for x in ternary_lines]
+        except Exception:
+            pass
+        return []
+
     def _resolve_ternary_entry(self, hexagram_id: int, phase_bits: int) -> Dict[str, Any]:
         cache_key = f"{hexagram_id}:{phase_bits}"
         entry = self._ternary_entry_cache.get(cache_key)
@@ -542,79 +772,75 @@ class KingWenEmotionProvider:
         )
 
     def consult(
-        self,
-        text: str = "",
-        session_id: str = "openjarvis",
-        emotional_input: int | None = None,
-    ) -> Dict[str, Any]:
-        """Return a deterministic emotional-state response for prompt injection."""
-        if not text:
-            raise ValueError("King Wen consult requires non-empty text for deterministic session-state derivation.")
-        if emotional_input is None:
-            raise ValueError("King Wen consult requires explicit emotional_input; pass a slider value.")
-        if not isinstance(emotional_input, (int, float)):
-            raise TypeError("King Wen consult requires numeric emotional_input.")
-        local_input = int(emotional_input)
-        if local_input < 0 or local_input > 100:
-            raise ValueError("King Wen consult requires emotional_input in range 0-100.")
-        collapse = self._collapse(text, session_id, local_input)
-        hexagram_id = int(collapse.get("best_hex") or 1)
-        phase_bits = int(collapse.get("best_phase") or 0)
-        record = self._registry[str(hexagram_id)]
-        weights = self._weights.get(str(hexagram_id), {})
-        reflections = self._reflections.get(str(hexagram_id), {})
-        ternary_entry = collapse.get("winning_entry") or {}
-        if not ternary_entry:
-            ternary_entry = self._resolve_ternary_entry(hexagram_id, phase_bits)
-        primary_name = record.get("name", "")
-        primary_unicode = record.get("unicode", "")
-        secondary_id = ternary_entry.get("hexagram_id")
-        secondary_name = ternary_entry.get("hexagram_name") if secondary_id != hexagram_id else ""
-        secondary_unicode = ternary_entry.get("hexagram_unicode") if secondary_id != hexagram_id else ""
-        hexagram_sequence = [primary_name]
-        if secondary_name and secondary_name != primary_name:
-            hexagram_sequence.append(secondary_name)
-        payload: Dict[str, Any] = {
-            "hexagram_id": hexagram_id,
-            "hexagram_name": primary_name,
-            "hexagram_unicode": primary_unicode,
-            "binary": record.get("binary", ""),
-            "upper_trigram": record.get("upper_trigram", ""),
-            "lower_trigram": record.get("lower_trigram", ""),
-            "category": record.get("category", ""),
-            "action": record.get("action", ""),
-            "hexagram_sequence": hexagram_sequence,
-            "phase_bits": phase_bits,
-            "phase_temporal": ternary_entry.get("phase_temporal", ""),
-            "phase_description": ternary_entry.get("phase_description", ""),
-            "ternary_str": ternary_entry.get("ternary_str", ""),
-            "ternary_lines_top_to_bottom": ternary_entry.get("ternary_lines_top_to_bottom", []),
-            "phase_changing_lines": ternary_entry.get("phase_changing_lines") or [],
-            "reaction_frame": self._format_reaction_frame(ternary_entry) if ternary_entry else "",
-            "emotional_deltas": {
-                "chaos": float(weights.get("chaos", 0.0)),
-                "whimsy": float(weights.get("whimsy", 0.0)),
-                "darkTone": float(weights.get("darkTone", 0.0)),
-                "coherence": float(weights.get("coherence", 0.0)),
-                "voiceWeight": float(weights.get("voiceWeight", 0.0)),
-            },
-            "reflections": {
-                "past": reflections.get("past", ""),
-                "present": reflections.get("present", ""),
-                "future": reflections.get("future", ""),
-            },
-            "trainingNotes": weights.get("trainingNotes", ""),
-            "unified_weave": self._build_unified_weave(reflections),
-            "emotional_tongue": collapse.get("emotional_tongue") or {},
-            "save_string": self.encode_tongue(collapse.get("emotional_tongue") or {}),
-        }
-        if secondary_name:
-            payload["secondary_hexagram"] = {
-                "id": secondary_id,
-                "name": secondary_name,
-                "unicode": secondary_unicode,
+            self,
+            text: str = "",
+            session_id: str = "openjarvis",
+            emotional_input: int | None = None,
+            *,
+            include_full_expansion: bool = False,
+            ternary: bool = False,
+        ) -> Dict[str, Any]:
+            """Return a deterministic emotional-state response for prompt injection.
+
+            Always returns the full 64-hexagram expansion with winner labeled.
+            Legacy single-hex fields are derived from consensus winner.
+            If ternary=True, returns full 729-hex/5,832-resolved ternary expansion.
+            """
+            if not text:
+                raise ValueError("King Wen consult requires non-empty text for deterministic session-state derivation.")
+            if emotional_input is None:
+                raise ValueError("King Wen consult requires explicit emotional_input; pass a slider value.")
+            if not isinstance(emotional_input, (int, float)):
+                raise TypeError("King Wen consult requires numeric emotional_input.")
+            local_input = int(emotional_input)
+            if local_input < 0 or local_input > 100:
+                raise ValueError("King Wen consult requires emotional_input in range 0-100.")
+
+            if ternary:
+                ternary_payload = self._ternary_full_expansion(local_input)
+                return {
+                    "mode": "ternary",
+                    "expanded_count": 729,
+                    "resolved_count": 5832,
+                    "canonical_count": 64,
+                    "ternary_count": 665,
+                    "expanded": ternary_payload.get("expanded", []),
+                    "resolved": ternary_payload.get("resolved", []),
+                    "consensus": ternary_payload.get("consensus", {}),
+                    "canonical_map": ternary_payload.get("canonical_map", {}),
+                    "source": "ternary_full_expansion",
+                }
+
+            collapse = self._collapse(text, session_id, local_input)
+            expanded = collapse.get("expanded", [])
+            consensus = collapse.get("consensus") or {}
+            resolved_flat = collapse.get("resolved", [])
+
+            record = self._registry[str(1)]
+            weights = self._weights.get(str(1), {})
+            reflections = self._reflections.get(str(1), {})
+
+            cns_tick = consciousness_tick(
+                session_id,
+                domain="cns",
+                yin_yang_yao=str(consensus.get("yao_label_mode") or ""),
+                past_present_future=str(consensus.get("phase_temporal_mode") or ""),
+            )
+
+            payload: Dict[str, Any] = {
+                "source": collapse.get("source", "collapse_full_128"),
+                "all_hexagrams_count": len(expanded),
+                "all_resolved_count": max(len(resolved_flat), len(expanded) * 8),
+                "expanded": expanded,
+                "consensus": consensus,
+                "resolved": resolved_flat,
+                "consciousness": {
+                    "tick_id": cns_tick.get("tick_id"),
+                    "yin_yang_yao": cns_tick.get("yin_yang_yao") or "",
+                    "past_present_future": cns_tick.get("past_present_future") or "",
+                },
             }
-        return payload
+            return payload
 
     @staticmethod
     def _build_unified_weave(reflections: Dict[str, Any]) -> str:
@@ -917,24 +1143,40 @@ class KingWenEmotionProvider:
         hash8 = f"{stable & 0xFFFFFFFF:08x}"
         return f"KW:{hexagram_id}:{phase_bits}:{session_id}:{hash8}"
 
-    def getHexagram(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = None) -> Dict[str, Any]:
-        """Return the current hexagram state resolved from the active consult.
-
-        This is the King Wen “now” signal: full ternary entry plus registry
-        metadata, without re-emitting the full Oracle Console formatting.
-        """
+    def getHexagram(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = None, *, hexagram_id: int | None = None, phase_bits: int | None = None) -> Dict[str, Any]:
+        """Return the requested hexagram state from the full expansion, or derive from consult when not explicitly selected."""
         if not text:
             raise ValueError("King Wen getHexagram requires non-empty text for deterministic state derivation.")
         if emotional_input is None:
             raise ValueError("King Wen getHexagram requires explicit emotional_input; pass a slider value.")
         collapse = self._collapse(text, session_id, emotional_input)
-        hexagram_id = int(collapse.get("best_hex") or 1)
-        phase_bits = int(collapse.get("best_phase") or 0)
-        record = self._registry[str(hexagram_id)]
-        weights = self._weights.get(str(hexagram_id), {})
-        ternary_entry = collapse.get("winning_entry") or self._resolve_ternary_entry(hexagram_id, phase_bits)
+        expanded = collapse.get("expanded", [])
+        resolved_index: Dict[tuple[int, int], Dict[str, Any]] = {}
+        for item in collapse.get("resolved", []) or []:
+            key = (int(item.get("hexagram_id") or 0), int(item.get("phase_bits") or 0))
+            resolved_index[key] = item
+
+        selected_entry: Dict[str, Any] = {}
+        selected_phase: Dict[str, Any] = {}
+        if hexagram_id is not None and phase_bits is not None:
+            for item in expanded:
+                if int(item.get("hexagram_id") or 0) == int(hexagram_id):
+                    selected_entry = item
+                    for ph in item.get("phases", []):
+                        if int(ph.get("phase_bits") or -1) == int(phase_bits):
+                            selected_phase = ph
+                    break
+        else:
+            # No explicit selector: use first expanded entry as default carrier.
+            # Caller must not interpret this as a collapse-to-1 winner.
+            selected_entry = next(iter(expanded), {})
+            selected_phase = next(iter(selected_entry.get("phases", [])), {})
+
+        record = selected_entry.get("hexagram_symbols") or self._registry.get(str(hexagram_id or 1), {})
+        weights = self._weights.get(str(hexagram_id or selected_entry.get("hexagram_id") or 1), {})
+        ternary_entry = selected_phase.get("ternary_lines_top_to_bottom") and selected_phase or self._resolve_ternary_entry(int(hexagram_id or selected_entry.get("hexagram_id") or 1), int(phase_bits or 0))
         return {
-            "hexagram_id": hexagram_id,
+            "hexagram_id": int(hexagram_id or selected_entry.get("hexagram_id") or 1),
             "hexagram_name": record.get("name", ""),
             "hexagram_unicode": record.get("unicode", ""),
             "binary": record.get("binary", ""),
@@ -942,12 +1184,12 @@ class KingWenEmotionProvider:
             "lower_trigram": record.get("lower_trigram", ""),
             "category": record.get("category", ""),
             "action": record.get("action", ""),
-            "phase_bits": phase_bits,
-            "phase_temporal": ternary_entry.get("phase_temporal", ""),
-            "ternary_str": ternary_entry.get("ternary_str", ""),
-            "ternary_lines_top_to_bottom": ternary_entry.get("ternary_lines_top_to_bottom") or [],
-            "phase_changing_lines": ternary_entry.get("phase_changing_lines") or [],
-            "call_sign": self.get_kingwen_call_sign(text, session_id, hexagram_id, phase_bits),
+            "phase_bits": int(phase_bits or selected_phase.get("phase_bits") or 0),
+            "phase_temporal": selected_phase.get("phase_temporal") or ternary_entry.get("phase_temporal", ""),
+            "ternary_str": selected_phase.get("ternary_str") or str(int(hexagram_id or 1) * 8 + int(phase_bits or 0)),
+            "ternary_lines_top_to_bottom": selected_phase.get("ternary_lines_top_to_bottom") or ternary_entry.get("ternary_lines_top_to_bottom") or [],
+            "phase_changing_lines": selected_phase.get("line_states") or ternary_entry.get("phase_changing_lines") or [],
+            "call_sign": self.get_kingwen_call_sign(text, session_id, int(hexagram_id or selected_entry.get("hexagram_id") or 1), int(phase_bits or selected_phase.get("phase_bits") or 0)),
             "has_call_sign": True,
             "has_sequence": bool(collapse.get("hexagram_sequence")),
             "has_reaction": bool(collapse.get("reaction_frame")),
@@ -962,6 +1204,9 @@ class KingWenEmotionProvider:
             "chaos": float(weights.get("chaos", 0.0)),
             "whimsy": float(weights.get("whimsy", 0.0)),
             "dark_tone": float(weights.get("darkTone", 0.0)),
+            "selected_from_expanded": hexagram_id is not None and phase_bits is not None,
+            "expanded_count": len(expanded),
+            "resolved_count": len(collapse.get("resolved", []) or []),
         }
 
     def getEmotionalState(self, text: str = "", session_id: str = "openjarvis", emotional_input: int = None) -> Dict[str, Any]:
@@ -1039,7 +1284,7 @@ class KingWenEmotionProvider:
             "session_id": session_id,
             "call_sign": call_sign,
             "token": token,
-            "injected_at": time.time(),
+            "injected_at": consciousness_tick(session_id, domain="cns").get("tick_id"),
         }
         history.append(entry)
         if len(history) > 64:

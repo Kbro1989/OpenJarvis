@@ -1123,3 +1123,132 @@ export async function setInferenceSource(
     throw new Error(e?.message ?? e ?? 'Failed to save inference source');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Blueprints
+// ---------------------------------------------------------------------------
+
+export interface BlueprintRecord {
+  id: string;
+  key: string;
+  title: string;
+  description: string;
+  status: string;
+  schedule?: string;
+  tools?: string;
+  agent?: string;
+  output_artifact?: string;
+  last_run?: string | null;
+  next_run?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface BlueprintArtifactLog {
+  id: number;
+  blueprint_key: string;
+  created_at: string;
+  status: string;
+  path?: string | null;
+  summary?: string | null;
+}
+
+export async function fetchBlueprints(): Promise<BlueprintRecord[]> {
+  const res = await apiFetch(`/v1/blueprints`);
+  if (!res.ok) {
+    // Keep failures explicit until the sibling backend routers are present.
+    throw new Error(`Failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.blueprints) ? data.blueprints : [];
+}
+
+export async function fetchBlueprintArtifacts(blueprintKey: string): Promise<BlueprintArtifactLog[]> {
+  const res = await apiFetch(`/v1/blueprints/${encodeURIComponent(blueprintKey)}/artifacts`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data.artifacts) ? data.artifacts : [];
+}
+
+// ---------------------------------------------------------------------------
+// Journey / learning timeline
+// ---------------------------------------------------------------------------
+
+export interface JourneyTimelineEvent {
+  session_id: string;
+  score: number;
+  synaptic_weight?: number;
+  intent?: string;
+  cluster?: string[];
+  related_sessions?: string[];
+  path?: string;
+  artifact_type?: string;
+  surface?: string;
+  occurred_at: number;
+}
+
+export interface JourneyStats {
+  total_events: number;
+  agent_runs: number;
+  knowledge_gaps: number;
+  resolved_gaps: number;
+  unique_sessions: number;
+  [key: string]: unknown;
+}
+
+export interface JourneyQueryResponse {
+  query: string;
+  events: JourneyTimelineEvent[];
+  match_count: number;
+}
+
+export async function fetchJourneyTimeline(limit = 20): Promise<{ events: JourneyTimelineEvent[]; match_count: number; query: string }> {
+  const res = await apiFetch(`/v1/journey/timeline?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchJourneyStats(): Promise<JourneyStats> {
+  const res = await apiFetch(`/v1/journey/stats`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function queryJourney(query: string): Promise<JourneyQueryResponse> {
+  const res = await apiFetch(`/v1/journey/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Artifacts
+// ---------------------------------------------------------------------------
+
+export interface ArtifactRecord {
+  id: string;
+  blueprint_key?: string | null;
+  created_at: string;
+  status: string;
+  path?: string | null;
+  summary?: string | null;
+  kind?: string | null;
+}
+
+export async function fetchArtifacts(): Promise<ArtifactRecord[]> {
+  const res = await apiFetch(`/v1/artifacts`);
+  if (!res.ok) {
+    // Keep failures explicit until the sibling backend routers are present.
+    throw new Error(`Failed: ${res.status}`);
+  }
+  const data = await res.json();
+  return Array.isArray(data.artifacts) ? data.artifacts : [];
+}
+
+export async function fetchArtifact(artifactId: string): Promise<ArtifactRecord> {
+  const res = await apiFetch(`/v1/artifacts/${encodeURIComponent(artifactId)}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}

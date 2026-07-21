@@ -586,8 +586,28 @@ async def kingwen_avatar(session_id: str, request: Request):
             canonical_tick_ms=640.0,
         )
         arm = _load_avalokiteshvara_arm(int(payload.get("hexagram_id") or 0))
+
+        consensus = payload.get("consensus") or {}
+        consensus_vector = consensus.get("vectors_mean") or payload.get("emotional_deltas") or {}
+        porosity_mean = consensus.get("porosity_mean")
+        dominant = _dominant_axis(consensus_vector)
+        state_signature = _build_state_signature(consensus_vector, porosity_mean, dominant)
+        temporal_anchor = _build_temporal_anchor(consensus_vector, session_id)
+        session_context = _build_session_context(request, session_id)
+
+        hexagrams_block = payload.get("expanded") or []
+        all_hexagrams = _build_all_hexagrams(hexagrams_block)
+
         return {
             "session_id": session_id,
+            "source": "worker-all-64",
+            "all_hexagrams": all_hexagrams,
+            "consensus_vector": consensus_vector,
+            "porosity_mean": porosity_mean,
+            "dominant": dominant,
+            "state_signature": state_signature,
+            "temporal_anchor": temporal_anchor,
+            "session_context": session_context,
             "hexagram_id": payload.get("hexagram_id"),
             "hexagram_name": payload.get("hexagram_name"),
             "unicode": payload.get("hexagram_unicode"),
@@ -626,6 +646,202 @@ def _load_avalokiteshvara_arm(hexagram_id: int) -> Dict[str, Any]:
     except Exception:
         pass
     return {}
+
+
+_SPEAKER_MAP = {
+    "voiceWeight": "Speak.",
+    "coherence": "Direct.",
+    "chaos": "Disrupt.",
+    "whimsy": "Imagine.",
+    "darkTone": "Reflect.",
+}
+
+
+def _dominant_axis(vector: Dict[str, float]) -> str:
+    if not vector:
+        return ""
+    best_key = max(vector, key=lambda k: float(vector.get(k) or 0.0))
+    return str(best_key)
+
+
+def _build_state_signature(vector: Dict[str, float], porosity_mean: float | None, dominant: str) -> str:
+    parts = [dominant or "neutral"]
+    try:
+        parts.append(f"p={float(porosity_mean or 0.0):.3f}")
+    except Exception:
+        parts.append("p=0.000")
+    for key in ["voiceWeight", "coherence", "chaos", "whimsy", "darkTone"]:
+        parts.append(f"{key}={float(vector.get(key) or 0.0):.3f}")
+    return "|".join(parts)
+
+
+def _build_temporal_anchor(vector: Dict[str, float], session_id: str) -> Dict[str, Any]:
+    return {
+        "session_id": session_id,
+        "timestamp": None,
+        "dominant": _dominant_axis(vector),
+        "coherence": float(vector.get("coherence") or 0.0),
+        "chaos": float(vector.get("chaos") or 0.0),
+        "voiceWeight": float(vector.get("voiceWeight") or 0.0),
+    }
+
+
+def _build_session_context(request: Request, session_id: str) -> Dict[str, Any]:
+    skills_used: list[str] = []
+    try:
+        from openjarvis.core.registry import SkillRegistry
+
+        for key in sorted(getattr(SkillRegistry, "keys", lambda: [])()):
+            skills_used.append(key)
+    except Exception:
+        pass
+
+    journey_markers: list[Dict[str, Any]] = []
+    try:
+        from openjarvis.server.journey_routes import journey_router as _journey_router
+
+        matches: list[Any] = []
+        try:
+            from openjarvis.core.journey_executor import JourneyExecutor
+
+            query = getattr(request.app.state, "journey_last_query", "") or "journey"
+            matches = JourneyExecutor().lookup(query=query)
+        except Exception:
+            pass
+        for match in matches[:20]:
+            journey_markers.append(
+                {
+                    "session_id": getattr(match, "session_id", None),
+                    "score": getattr(match, "score", None),
+                    "intent": getattr(match, "intent", None),
+                    "cluster": getattr(match, "cluster", None),
+                    "path": getattr(match, "path", None),
+                    "artifact_type": getattr(match, "artifact_type", None),
+                    "surface": getattr(match, "surface", None),
+                }
+            )
+    except Exception:
+        pass
+
+    actionable_paths: list[str] = []
+    try:
+        session = None
+        try:
+            from openjarvis.sessions.store import SessionStore
+
+            store = SessionStore()
+            session = store.get(session_id)
+        except Exception:
+            pass
+        if session is not None:
+            raw = getattr(session, "metadata", {}) or {}
+            candidate = raw.get("actionable_paths")
+            if isinstance(candidate, list):
+                actionable_paths = [str(p) for p in candidate if p]
+    except Exception:
+        pass
+
+    return {
+        "skills_used": skills_used,
+        "journey_markers": journey_markers,
+        "actionable_paths": actionable_paths,
+        "labels": _session_labels(skills_used, journey_markers, actionable_paths),
+    }
+
+
+def _session_labels(skills_used, journey_markers, actionable_paths) -> list[str]:
+    labels: list[str] = []
+    if skills_used:
+        labels.append(f"skills={','.join(skills_used[:8])}")
+    if journey_markers:
+        labels.append(f"journey={len(journey_markers)}")
+    if actionable_paths:
+        labels.append(f"paths={','.join(actionable_paths[:8])}")
+    return labels[:16]
+
+
+def _build_all_hexagrams(hexagrams_block: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    expanded: list[Dict[str, Any]] = []
+    for item in hexagrams_block or []:
+        if not isinstance(item, dict):
+            continue
+        entry: Dict[str, Any] = {
+            "hexagram_id": item.get("hexagram_id"),
+            "binary": (
+                "".join(str(x) for x in (item.get("trigram_vector") or []))
+                if item.get("trigram_vector") is not None
+                else ""
+            ),
+            "unicode": (item.get("hexagram_symbols") or {}).get("unicode", ""),
+            "name": (item.get("hexagram_symbols") or {}).get("name", ""),
+            "upper_trigram": (item.get("hexagram_symbols") or {}).get("upper_trigram", ""),
+            "lower_trigram": (item.get("hexagram_symbols") or {}).get("lower_trigram", ""),
+            "category": (item.get("hexagram_symbols") or {}).get("category", ""),
+            "action": (item.get("hexagram_symbols") or {}).get("action", ""),
+            "phase_bits": [],
+            "dominant_axes": [],
+            "porosity_mean": None,
+            "state_signature": "",
+        }
+        phase_bits: list[int] = []
+        dominant_axes: list[str] = []
+        porosities: list[float] = []
+        vectors: Dict[str, Any] = {}
+        phase_temporal = ""
+        for phase in item.get("phases", []) or []:
+            if not isinstance(phase, dict):
+                continue
+            pb = phase.get("phase_bits")
+            if pb is not None:
+                phase_bits.append(int(pb))
+            phase_vectors = phase.get("vectors") or {}
+            if phase_vectors and not vectors:
+                vectors = dict(phase_vectors)
+            if not phase_temporal:
+                for key in ("phase_temporal", "temporal", "time", "direction"):
+                    value = phase.get(key)
+                    if value:
+                        phase_temporal = str(value)
+                        break
+            dominant_axis = _dominant_axis(phase_vectors)
+            if dominant_axis:
+                dominant_axes.append(dominant_axis)
+            porosity = phase.get("porosity")
+            if porosity is not None:
+                try:
+                    porosities.append(float(porosity))
+                except (TypeError, ValueError):
+                    pass
+        entry["phase_bits"] = phase_bits
+        entry["dominant_axes"] = dominant_axes
+        entry["porosity_mean"] = (
+            sum(porosities) / len(porosities) if porosities else None
+        )
+        entry["state_signature"] = (
+            _build_state_signature(
+                _dominant_fallback_vector(dominant_axes),
+                entry.get("porosity_mean"),
+                _dominant_axis(_dominant_fallback_vector(dominant_axes)),
+            )
+            if dominant_axes
+            else ""
+        )
+        entry["vectors"] = vectors
+        entry["phase_temporal"] = phase_temporal or "present"
+        expanded.append(entry)
+    return expanded
+
+
+def _dominant_fallback_vector(dominant_axes: list[str]) -> Dict[str, float]:
+    vector: Dict[str, float] = {}
+    counts: Dict[str, int] = {}
+    for axis in dominant_axes:
+        if not axis:
+            continue
+        counts[axis] = counts.get(axis, 0) + 1
+    for axis, count in counts.items():
+        vector[axis] = float(count)
+    return vector or {"voiceWeight": 0.0, "coherence": 0.0, "chaos": 0.0, "whimsy": 0.0, "darkTone": 0.0}
 
 
 @kingwen_router.post("/consult")
@@ -1193,6 +1409,13 @@ def include_all_routes(app) -> None:
     app.include_router(feedback_router)
     app.include_router(optimize_router)
 
+    # Journey / learning timeline routes (agent emphasis + replay history).
+    try:
+        from openjarvis.server.journey_routes import journey_router
+        app.include_router(journey_router)
+    except ImportError:
+        pass
+
     # Agent Manager routes (if available)
     try:
         if hasattr(app.state, "agent_manager") and app.state.agent_manager:
@@ -1244,6 +1467,7 @@ __all__ = [
     "sessions_router",
     "budget_router",
     "metrics_router",
+    "kingwen_router",
     "websocket_router",
     "learning_router",
     "speech_router",

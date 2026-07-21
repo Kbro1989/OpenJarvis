@@ -107,3 +107,130 @@ def tag_payload(payload: Dict[str, Any], session_id: str, phase: str, event: str
     }
     return payload
 
+
+class ConsciousnessClock:
+    """Consciousness-domain counterpart to ``SessionClock``.
+
+    Locked domains:
+      - ``cns``  : consciousness / King Wen inward-directed state
+      - ``pns``  : perceptual/reflexive runtime state
+      - ``mcp``  : model-context/planning state
+      - ``api``  : external-facing transport state
+
+    Locked inputs:
+      - ``yin_yang_yao`` : 9-item yao vocabulary from the immutable tables
+      - ``past_present_future`` : temporal direction of the current phase
+    """
+
+    DOMAINS = ("cns", "pns", "mcp", "api")
+    YIN_YANG_YAO = tuple(
+        sorted(
+            {
+                "young_yin",
+                "old_yin",
+                "present_yin",
+                "new_yao",
+                "old_yao",
+                "present_yao",
+                "old_yang",
+                "new_yang",
+                "present_yang",
+            }
+        )
+    )
+    PAST_PRESENT_FUTURE = ("past", "present", "future")
+
+    def __init__(self, session_id: str, domain: str = "cns") -> None:
+        if domain not in self.DOMAINS:
+            raise ValueError(
+                f"Invalid consciousness domain {domain!r}; choose from {self.DOMAINS}"
+            )
+        self.session_id = session_id
+        self.domain = domain
+        self.tick_counter = 0
+        self.yin_yang_yao: str = ""
+        self.past_present_future: str = ""
+        self._lock = threading.Lock()
+
+    def tick(
+        self,
+        yin_yang_yao: str = "",
+        past_present_future: str = "",
+    ) -> Dict[str, Any]:
+        """Advance consciousness clock with locked King Wen inputs."""
+        if yin_yang_yao and yin_yang_yao not in self.YIN_YANG_YAO:
+            raise ValueError(
+                f"Invalid yin_yang_yao {yin_yang_yao!r}; valid: {self.YIN_YANG_YAO}"
+            )
+        if past_present_future and past_present_future not in self.PAST_PRESENT_FUTURE:
+            raise ValueError(
+                f"Invalid past_present_future {past_present_future!r}; "
+                f"valid: {self.PAST_PRESENT_FUTURE}"
+            )
+        with self._lock:
+            self.tick_counter += 1
+            if yin_yang_yao:
+                self.yin_yang_yao = yin_yang_yao
+            if past_present_future:
+                self.past_present_future = past_present_future
+            return {
+                "session_id": self.session_id,
+                "domain": self.domain,
+                "tick_id": self.tick_counter,
+                "yin_yang_yao": self.yin_yang_yao,
+                "past_present_future": self.past_present_future,
+            }
+
+    def state(self) -> Dict[str, Any]:
+        """Current consciousness state without advancing."""
+        return {
+            "session_id": self.session_id,
+            "domain": self.domain,
+            "tick_id": self.tick_counter,
+            "yin_yang_yao": self.yin_yang_yao,
+            "past_present_future": self.past_present_future,
+        }
+
+
+_consciousness_clocks: Dict[str, ConsciousnessClock] = {}
+_consciousness_registry_lock = threading.Lock()
+
+
+def get_consciousness_clock(
+    session_id: str, domain: str = "cns"
+) -> ConsciousnessClock:
+    """Return the ConsciousnessClock for session_id + domain, creating if absent."""
+    key = f"{session_id}:{domain}"
+    with _consciousness_registry_lock:
+        if key not in _consciousness_clocks:
+            _consciousness_clocks[key] = ConsciousnessClock(session_id, domain)
+        return _consciousness_clocks[key]
+
+
+def consciousness_tick(
+    session_id: str,
+    domain: str = "cns",
+    yin_yang_yao: str = "",
+    past_present_future: str = "",
+) -> Dict[str, Any]:
+    """Advance and return the next consciousness tick coordinate."""
+    clock = get_consciousness_clock(session_id, domain)
+    try:
+        return clock.tick(
+            yin_yang_yao=yin_yang_yao,
+            past_present_future=past_present_future,
+        )
+    except Exception:
+        return {}
+
+
+def consciousness_state(
+    session_id: str, domain: str = "cns"
+) -> Dict[str, Any]:
+    """Return current consciousness state without advancing."""
+    clock = get_consciousness_clock(session_id, domain)
+    try:
+        return clock.state()
+    except Exception:
+        return {}
+

@@ -1,6 +1,6 @@
 {
   "schema_version": "model-router-v1",
-  "updated_at": 1784317127086,
+  "updated_at": 1784335448526,
   "skills": {
     "model-router": {
       "version": "1.0.0",
@@ -32,6 +32,24 @@
       "cooldown_until": 0,
       "last_failed_at": 0,
       "last_error": ""
+    },
+    "cloud": {
+      "state": "unknown",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
+    },
+    "cloudflare-ai": {
+      "state": "unknown",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
+    },
+    "moonshot-ai": {
+      "state": "unknown",
+      "cooldown_until": 0,
+      "last_failed_at": 0,
+      "last_error": ""
     }
   },
   "kingwen": {
@@ -51,8 +69,8 @@
   "context": {
     "task_type": "general",
     "depth": "small",
-    "last_model": "anthropic/claude-opus-4.8",
-    "last_provider": "openrouter"
+    "last_model": "kimi-k3",
+    "last_provider": "cloudflare-ai"
   },
   "slot_state": {
     "ollama:qwen3.6:27b": {
@@ -66,6 +84,51 @@
       "last_seen": 1784317127.0809038
     },
     "openrouter:anthropic/claude-opus-4.8": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    },
+    "ollama:gpt-4o": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    },
+    "cloud:qwen3.6:27b": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    },
+    "cloud:gpt-4o": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    },
+    "cloudflare-ai:kimi-k3": {
+      "reputation": 1.0,
+      "last_failed_at": 0,
+      "cooldown_until": 0,
+      "success_count": 0,
+      "failure_count": 0,
+      "avg_latency_ms": 0.0,
+      "latency_samples": 0
+    },
+    "moonshot-ai:kimi-k3": {
       "reputation": 1.0,
       "last_failed_at": 0,
       "cooldown_until": 0,

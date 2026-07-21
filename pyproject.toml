@@ -200,6 +200,7 @@ packages = ["src/openjarvis"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 markers = [
     "amd: requires AMD GPU",
     "apple: requires Apple Silicon",

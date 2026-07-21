@@ -137,6 +137,12 @@ class BaseAgent(ABC):
                     emotional_input=getattr(self, "_emotion_input"),
                 )
                 self._kingwen_consult_payload = payload
+                session_id = getattr(self, "_kingwen_session_id", "openjarvis")
+                try:
+                    from openjarvis.core.session_clock_bridge import consciousness_tick
+                    self._kingwen_pns_tick = consciousness_tick(session_id, domain="pns")
+                except Exception:
+                    self._kingwen_pns_tick = {}
                 preset = provider.voice_preset(
                     tts_backend=getattr(self, "_tts_backend", None) or "cartesia",
                     voice_weight=float(
@@ -718,16 +724,30 @@ class BaseAgent(ABC):
         *,
         max_continuations: int = 2,
     ) -> str:
-        """Re-prompt on ``finish_reason == "length"`` to get complete output.
+        """Re-prompt when the model stopped without finishing the thought.
 
-        Returns the concatenated content after up to *max_continuations*
-        follow-up generate calls.
+        Continues on:
+        - ``finish_reason == "length"``
+        - empty/whitespace content with no tool calls
+        - content ending mid-thought without a terminal stop signal
         """
-        content = result.get("content", "")
-        finish_reason = result.get("finish_reason", "")
+        content = result.get("content", "") or ""
+        finish_reason = result.get("finish_reason", "") or ""
+        raw_tool_calls = result.get("tool_calls", []) or []
+
+        def _should_continue() -> bool:
+            if finish_reason == "length":
+                return True
+            if not content.strip() and not raw_tool_calls:
+                return True
+            if not content.strip():
+                return False
+            if finish_reason in ("", "stop", "tool_calls"):
+                return False
+            return False
 
         for _ in range(max_continuations):
-            if finish_reason != "length":
+            if not _should_continue():
                 break
             # Append what we have so far and ask the model to continue
             from openjarvis.core.types import Message, Role
@@ -740,9 +760,9 @@ class BaseAgent(ABC):
                 ),
             )
             cont = self._generate(messages)
-            continuation = cont.get("content", "")
-            content += continuation
-            finish_reason = cont.get("finish_reason", "")
+            content = cont.get("content", "") or ""
+            finish_reason = cont.get("finish_reason", "") or ""
+            raw_tool_calls = cont.get("tool_calls", []) or []
 
         return content
 

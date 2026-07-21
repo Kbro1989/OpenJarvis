@@ -25,7 +25,10 @@ Root: C:\Users\krist\Desktop\OpenJarvis
 - [x] `CODE_OF_CONDUCT.md` — 85 lines, 5622 bytes [FEED]
 - [x] `CONTRIBUTING.md` — 201 lines, 7234 bytes [FEED]
 - [x] `REVIEW.md` — 43 lines, 2632 bytes [FEED]
-- [r] `mkdocs.yml` — 205 lines, 6584 bytes [FEED]
+- [x] `OPENJARVIS_IMPLEMENTATION_CHECKLIST.md` — 218 lines, implementation tracker [FEED]
+- [x] `docs/architecture/overview.md` — updated with sovereign runtime layout [FEED]
+- [x] `docs/architecture/engine.md` — updated with sovereign runtime section [FEED]
+- [x] `king_wen_codebasemap.md` — 156 lines, 7473 bytes [FEED]
 
 ### Research / Artifacts
 - [x] `jarvis-system-avatar-research.md` — 523 lines, 22621 bytes [FEED]
@@ -200,9 +203,9 @@ Root: C:\Users\krist\Desktop\OpenJarvis
 10. [ ] Add `kingwen` script runner mode to rsmv Model Viewer
 
 ## Artifacts Created This Session
-- `C:\Users\krist\Desktop\OpenJarvas\hermes-fork-middleware-map-2026-07-16.md` — middleware attachment map
-- `C:\Users\krist\Desktop\OpenJarvas\hermes-session-clock-provenance-map-2026-07-16.md` — session clock mapping
-- `C:\Users\krist\Desktop\OpenJarvas\openjarvas-kingwen-io-ports-audit-2026-07-07.md` — King Wen I/O audit
+- `C:\Users\krist\Desktop\OpenJarvis\hermes-fork-middleware-map-2026-07-16.md` — middleware attachment map
+- `C:\Users\krist\Desktop\OpenJarvis\hermes-session-clock-provenance-map-2026-07-16.md` — session clock mapping
+- `C:\Users\krist\Desktop\OpenJarvis\openjarvis-kingwen-io-ports-audit-2026-07-07.md` — King Wen I/O audit
 - `C:\Users\krist\Desktop\OpenJarvis\blueprints\jarvis-slash-parity.md` — slash parity blueprint
 - `C:\Users\krist\Desktop\OpenJarvis\src\openjarvis\core\session_clock_bridge.py` — temporal authority bridge
 - `C:\Users\krist\Desktop\OpenJarvis\src\openjarvis\cli\blueprint_cmd.py` — Jarvis-native blueprint handler

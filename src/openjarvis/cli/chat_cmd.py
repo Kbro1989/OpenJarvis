@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sys
+import asyncio
+from dataclasses import dataclass
+from pathlib import Path as _Path
 from typing import List, Optional
 
 import click
@@ -15,6 +18,90 @@ from openjarvis.core.events import EventBus
 from openjarvis.core.types import Message, Role
 from openjarvis.memory import publish_completed_exchange
 from openjarvis.cli.ask import _append_kingwen_block
+from openjarvis.server.kingwen.kingwen_client_sync import KingwenClientSync, FullExpansionWire
+from openjarvis.server.learn.capture import capture_learn
+from openjarvis.slash.slash_registry import SlashCommandRegistry, SlashContext, SlashCommand
+from openjarvis.slash.handlers import (
+    handle_goal,
+    handle_snapshot,
+    handle_rollback,
+    handle_queue,
+    handle_steer,
+    handle_webhook,
+    handle_kanban,
+    handle_curator,
+)
+from openjarvis.emotion.kingwen_completion_injection import KingWenCompletionInjectionEngine
+
+from openjarvis.core.neurological_map import JarvisNeurologicalMap
+from openjarvis.sovereign.immunology import CognitiveImmunologyEmergency, NodeTester
+from openjarvis.sovereign.pulse_monitor import BiologicalPulseMonitor
+
+_slash_registry = SlashCommandRegistry()
+_slash_registry.register(
+    SlashCommand(
+        name="/goal",
+        handler=handle_goal,
+        description="Set or list standing goals.",
+        category="planning",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/snapshot",
+        handler=handle_snapshot,
+        description="Create a system snapshot.",
+        category="system",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/rollback",
+        handler=handle_rollback,
+        description="Roll back to a snapshot id.",
+        category="system",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/queue",
+        handler=handle_queue,
+        description="Queue an action for next turn.",
+        category="planning",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/steer",
+        handler=handle_steer,
+        description="Inject an instruction after next tool call.",
+        category="automation",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/webhook",
+        handler=handle_webhook,
+        description="Manage webhook subscriptions.",
+        category="automation",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/kanban",
+        handler=handle_kanban,
+        description="Show the multi-profile kanban board.",
+        category="organization",
+    )
+)
+_slash_registry.register(
+    SlashCommand(
+        name="/curator",
+        handler=handle_curator,
+        description="Run background skill maintenance scan.",
+        category="maintenance",
+    )
+)
 
 
 def _cmd_models(console: "Console", active_model: str, engine_name: str) -> None:
@@ -161,6 +248,41 @@ def _read_input(prompt: str = "You> ") -> Optional[str]:
         return input(prompt)
     except (EOFError, KeyboardInterrupt):
         return None
+
+
+@dataclass(slots=True)
+class _BlueprintKV:
+    values: dict[str, str]
+    leftover: list[str]
+
+
+def _parse_blueprint_kv(raw: str) -> _BlueprintKV:
+    values: dict[str, str] = {}
+    leftover: list[str] = []
+    for token in (raw or "").split():
+        if "=" in token:
+            key, _, value = token.partition("=")
+            values[key.strip()] = value.strip()
+        else:
+            leftover.append(token)
+    return _BlueprintKV(values=values, leftover=leftover)
+
+
+@dataclass(slots=True)
+class _BlueprintValues:
+    prompt: str
+    schedule_type: str
+    schedule_value: str
+    extra: dict[str, str]
+
+
+def _build_blueprint_values(blueprint: dict[str, str], raw: _BlueprintKV) -> _BlueprintValues:
+    values = dict(raw.values)
+    text = values.pop("text", None) or blueprint.get("description", "") or " ".join(raw.leftover)
+    prompt = values.pop("prompt", None) or blueprint.get("execution_prompt") or text
+    schedule_type = values.pop("schedule_type", None) or values.pop("type", None) or "once"
+    schedule_value = values.pop("schedule_value", None) or values.pop("value", None) or "1970-01-01T00:00:00+00:00"
+    return _BlueprintValues(prompt=prompt, schedule_type=schedule_type, schedule_value=schedule_value, extra=values)
 
 
 @click.command()
@@ -333,6 +455,13 @@ def chat(
         console.print(f"[yellow]Memory service unavailable: {exc}[/yellow]")
         memory_service = None
 
+    # King Wen completion injection — expanded consensus + batch save-string injection per turn.
+    completion_injection = None
+    try:
+        completion_injection = KingWenCompletionInjectionEngine(session_id="chat-session")
+    except Exception as exc:
+        console.print(f"[yellow]King Wen completion injection unavailable: {exc}[/yellow]")
+
     # Conversation state
     if not system_prompt:
         from openjarvis.prompt.builder import SystemPromptBuilder
@@ -384,6 +513,10 @@ def chat(
                 continue
             from openjarvis.cli._oracle_speak import oracle_speak_async, get_emotional_input
 
+            kw = KingwenClientSync(session_id="chat-session")
+            wire = FullExpansionWire(session_id="chat-session", client=kw, storage=kw)
+            state_before = kw.get_state()
+
             def _done(fut):
                 try:
                     result = fut.result()
@@ -413,10 +546,44 @@ def chat(
                     console.print(f"[dim]audio={result.get('audio_path')} played={played} backend={result.get('backend')}[/dim]")
                 if mode == "do" and result.get("tool_hint"):
                     console.print(f"[bold yellow]Do[/bold yellow]: {result.get('tool_hint')} | rule={result.get('rule')}")
+                try:
+                    capture_learn(
+                        session_id="chat-session",
+                        handler="/oracle",
+                        user_input=query,
+                        query=query,
+                        response_summary=result.get("tool_hint") or scene.get("description") or "",
+                        status="success",
+                        tool_used="/oracle",
+                    )
+                except Exception:
+                    pass
+                try:
+                    expansion = wire.process(query, domain="speech/vocabulary", tool="/oracle")
+                    console.print_json({
+                        "handler": "/oracle",
+                        "expansion": {
+                            "source": expansion.get("expansionSource"),
+                            "expandedCount": expansion.get("expandedCount"),
+                            "resolvedCount": expansion.get("resolvedCount"),
+                            "hexagramId": expansion.get("hexagramId"),
+                            "phase": expansion.get("phase"),
+                        },
+                        "inject": expansion.get("inject"),
+                    })
+                except Exception:
+                    pass
+                kw.close()
 
             future = oracle_speak_async(query, emotional_input=get_emotional_input(), on_done=_done)
             console.print("[dim]Oracle is consulting... voice will appear when ready.[/dim]")
             continue
+
+        elif cmd.startswith("/blueprint"):
+            from openjarvis.blueprints.chat_handler import handle_blueprint_command
+            handle_blueprint_command(user_input, console)
+            continue
+
         elif cmd.startswith("/counsel "):
             query = user_input[len("/counsel "):].strip()
             if not query:
@@ -425,6 +592,10 @@ def chat(
             from openjarvis.cli._oracle_speak import oracle_speak_async, get_emotional_input
 
             counsel_prefix = "Counsel me through past, present, and future truth: "
+
+            kw = KingwenClientSync(session_id="chat-session")
+            wire = FullExpansionWire(session_id="chat-session", client=kw, storage=kw)
+            state_before = kw.get_state()
 
             def _done(fut):
                 try:
@@ -449,6 +620,34 @@ def chat(
                         f"[dim]chaos={prosody.get('chaos',0):.2f} whimsy={prosody.get('whimsy',0):.2f} darkTone={prosody.get('darkTone',0):.2f} coherence={prosody.get('coherence',0):.2f} voiceWeight={prosody.get('voiceWeight',0):.2f}[/dim]"
                     )
                 console.print(_oracle_render(result))
+                try:
+                    capture_learn(
+                        session_id="chat-session",
+                        handler="/counsel",
+                        user_input=query,
+                        query=query,
+                        response_summary=scene.get("description") or "",
+                        status="success",
+                        tool_used="/counsel",
+                    )
+                except Exception:
+                    pass
+                try:
+                    expansion = wire.process(query, domain="speech/vocabulary", tool="/counsel")
+                    console.print_json({
+                        "handler": "/counsel",
+                        "expansion": {
+                            "source": expansion.get("expansionSource"),
+                            "expandedCount": expansion.get("expandedCount"),
+                            "resolvedCount": expansion.get("resolvedCount"),
+                            "hexagramId": expansion.get("hexagramId"),
+                            "phase": expansion.get("phase"),
+                        },
+                        "inject": expansion.get("inject"),
+                    })
+                except Exception:
+                    pass
+                kw.close()
 
             future = oracle_speak_async(counsel_prefix + query, emotional_input=get_emotional_input(), on_done=_done)
             console.print("[dim]Oracle is counseling... voice will appear when ready.[/dim]")
@@ -462,8 +661,15 @@ def chat(
             _cmd_models(console, model, engine_name)
             continue
         elif cmd.startswith("/blueprint "):
-            from openjarvis.cli._oracle_speak import _consult_worker, _ensure_voice_router, get_emotional_input
-            from openjarvis.cli.blueprint_schema import build_agentic_instruction, action_from_router, constraints_for_action
+            from pathlib import Path
+
+            from openjarvis.blueprints.registry import BlueprintRegistry
+            from openjarvis.blueprints.store import BlueprintStore, BlueprintRecord
+            from openjarvis.blueprints.executor import BlueprintExecutor
+            from openjarvis.cli.blueprint_schema import build_agentic_instruction
+            from openjarvis.core.config import DEFAULT_CONFIG_DIR
+            from openjarvis.scheduler.scheduler import TaskScheduler
+            from openjarvis.scheduler.store import SchedulerStore
 
             blueprint_query = user_input[len("/blueprint "):].strip()
             if not blueprint_query:
@@ -471,16 +677,18 @@ def chat(
                 continue
 
             vision_data = None
-            try:
-                from openjarvis.vision import BlueprintEyes
-                eyes = BlueprintEyes()
-                candidate = Path(blueprint_query)
-                if candidate.exists() and candidate.is_file():
+            candidate = Path(blueprint_query)
+            if candidate.exists() and candidate.is_file():
+                try:
+                    from openjarvis.vision import BlueprintEyes
+
+                    eyes = BlueprintEyes()
                     raw = candidate.read_bytes()
                     width = height = 0
                     try:
                         from PIL import Image
                         import io
+
                         with Image.open(io.BytesIO(raw)) as img:
                             width, height = img.size
                             if img.mode != "RGBA":
@@ -491,80 +699,129 @@ def chat(
                     base64_image = __import__("base64").b64encode(raw).decode()
                     if width and height:
                         vision_data = eyes.parse(raw, width, height, base64_image)
-            except Exception as exc:
-                console.print(f"[dim]Blueprint vision skipped: {exc}[/dim]")
+                except Exception as exc:
+                    console.print(f"[dim]Blueprint vision skipped: {exc}[/dim]")
 
+            registry = BlueprintRegistry()
+            blueprint, candidates = registry._match_blueprint_on_query(blueprint_query)
+            blueprint_store = BlueprintStore(DEFAULT_CONFIG_DIR / "blueprints.db")
+            scheduler_store = SchedulerStore(DEFAULT_CONFIG_DIR / "scheduler.db")
+            task_id = None
+            next_run = None
             try:
-                consult = _consult_worker(
-                    blueprint_query,
-                    session_id="blueprint",
-                    emotional_input=get_emotional_input(),
-                    vision_data=vision_data,
-                )
-            except Exception as exc:
-                console.print(f"[red]Blueprint consult failed: {exc}[/red]")
-                continue
-
-            if "error" in consult:
-                console.print(f"[red]Blueprint consult error: {consult['error']}[/red]")
-                continue
-
-            router = _ensure_voice_router()
-            router_eval = router.evaluate_advice(
-                consult,
-                user_direct_input=True,
-                safety_ok=True,
-                sensor_variance=abs(float(consult.get("consensus_vector", {}).get("voiceWeight", 0.5) or 0.5) - 0.5),
-            ) if router else {
-                "advice_hexagram": int(consult.get("consensus_hexagram_id") or 0),
-                "voice_mode": "idle",
-                "priority": 1,
-                "hold_in_state": False,
-                "deliberation": False,
-                "fault_vector": 0,
-                "crit_countdown": None,
-                "reasoning": "router unavailable",
-            }
-
-            action_type = action_from_router(router_eval)
-            constraints = constraints_for_action(action_type, router_eval)
-            instruction = build_agentic_instruction(
-                source_ingestion=f"cli://blueprint/{blueprint_query[:64]}",
-                oracle_consensus={
-                    "consensus_hexagram_id": consult.get("consensus_hexagram_id"),
-                    "consensus_yao": consult.get("consensus_yao"),
-                    "consensus_temporal": consult.get("consensus_temporal"),
-                    "consensus_vector": consult.get("consensus_vector"),
-                    "emotional_input": consult.get("emotional_input"),
-                    "temporal_distribution": consult.get("temporal_distribution"),
-                    "porosity_mean": consult.get("porosity_mean"),
-                    "porosity_median": consult.get("porosity_median"),
-                    "porosity_mode": consult.get("porosity_mode"),
-                    "vectors_mean": consult.get("vectors_mean"),
-                    "vectors_median": consult.get("vectors_median"),
-                    "vectors_mode": consult.get("vectors_mode"),
-                    "primary_pool_mode": consult.get("primary_pool_mode"),
-                    "secondary_pool_mode": consult.get("secondary_pool_mode"),
-                    "direction_mode": consult.get("direction_mode"),
-                    "yao_label_mode": consult.get("yao_label_mode"),
-                    "past_mode": consult.get("past_mode"),
-                    "present_mode": consult.get("present_mode"),
-                    "future_mode": consult.get("future_mode"),
-                    "reasons": consult.get("reasons"),
-                },
-                router_evaluation=router_eval,
-                agentic_action={
-                    "type": action_type,
-                    "tool": "kingwen_oracle_worker",
-                    "parameters": {
+                if blueprint is None:
+                    payload = {
+                        "command": "/blueprint",
+                        "matched": False,
                         "query": blueprint_query,
-                        "rag_context": True,
-                        "voice_output": False,
+                        "candidates": candidates,
+                        "catalog_count": len(registry.all()),
+                        "artifact_path": None,
+                        "task_id": None,
+                        "next_run": None,
+                    }
+                    console.print_json(payload)
+                    continue
+
+                if blueprint_store.get_blueprint(blueprint["key"]) is None:
+                    blueprint_store.save_blueprint(
+                        BlueprintRecord(
+                            key=blueprint["key"],
+                            title=blueprint["title"],
+                            description=blueprint["description"],
+                            schedule=blueprint.get("default_schedule", "0 8 * * *"),
+                            tools=blueprint.get("default_tools", ""),
+                            agent=blueprint.get("default_agent", "simple"),
+                            output_artifact=blueprint.get("output_artifact", "brief"),
+                            status="active",
+                        )
+                    )
+
+                bv = _build_blueprint_values(blueprint, _parse_blueprint_kv(blueprint_query))
+                scheduler = TaskScheduler(scheduler_store)
+                task = scheduler.create_task(
+                    prompt=bv.prompt,
+                    schedule_type=bv.schedule_type,
+                    schedule_value=bv.schedule_value,
+                    agent=blueprint.get("default_agent", "simple"),
+                    tools=blueprint.get("default_tools", ""),
+                    metadata={"blueprint_key": blueprint["key"], "values": bv.extra},
+                )
+                task_id = task.id
+                next_run = task.next_run
+
+                executor = BlueprintExecutor(blueprint_store)
+                registry_definition = registry.get(blueprint["key"])
+                run_result = executor.run(
+                    registry_definition,
+                    values={"text": bv.prompt, **bv.extra},
+                )
+
+                instruction = build_agentic_instruction(
+                    source_ingestion=f"blueprint://{blueprint['key']}",
+                    oracle_consensus={},
+                    router_evaluation={
+                        "advice_hexagram": 0,
+                        "voice_mode": "idle",
+                        "priority": 1,
+                        "hold_in_state": False,
+                        "deliberation": False,
+                        "fault_vector": 0,
+                        "crit_countdown": None,
+                        "reasoning": "blueprint-executor artifact creation",
                     },
-                    "constraints": constraints,
-                },
-                scene_generation=vision_data.get("scene_facts") if vision_data else None,
-            )
+                    agentic_action={
+                        "type": "consult_and_respond",
+                        "tool": "blueprint_executor",
+                        "parameters": {
+                            "blueprint_key": blueprint["key"],
+                            "task_id": task_id,
+                            "schedule_type": bv.schedule_type,
+                            "schedule_value": bv.schedule_value,
+                            "values": bv.extra,
+                        },
+                        "constraints": {"fabrication_policy": "PROHIBITED", "allow_tool_use": False},
+                    },
+                    scene_generation=(vision_data or {}).get("scene_facts") if vision_data else None,
+                )
+                payload = {
+                    "command": "/blueprint",
+                    "matched": True,
+                    "blueprint_key": blueprint["key"],
+                    "title": blueprint["title"],
+                    "task_id": task_id,
+                    "next_run": next_run,
+                    "artifact_path": run_result.artifact_path,
+                    "status": run_result.status,
+                    "summary": run_result.summary,
+                    "error": run_result.error,
+                }
+                console.print_json({**instruction, **payload})
+                try:
+                    capture_learn(
+                        session_id="chat-session",
+                        handler="/blueprint",
+                        user_input=blueprint_query,
+                        query=blueprint_query,
+                        response_summary=run_result.summary or "",
+                        status=run_result.status or "success",
+                        artifact_path=run_result.artifact_path,
+                        tool_used="/blueprint",
+                    )
+                except Exception:
+                    pass
+            except Exception as exc:
+                console.print(f"[red]blueprint failed: {exc}[/red]")
+            finally:
+                try:
+                    blueprint_store.close()
+                except Exception:
+                    pass
+                try:
+                    scheduler_store.close()
+                except Exception:
+                    pass
+            continue
         elif cmd.startswith("/blueprint wiki-math-parser "):
             from pathlib import Path
             import sys as _sys
@@ -932,6 +1189,18 @@ def chat(
                         "learn_artifacts": stats,
                         "pseudopod_ingest": pseudopod_ingest,
                     })
+                    try:
+                        capture_learn(
+                            session_id="chat-session",
+                            handler="/learn",
+                            user_input=user_input,
+                            query="learn run",
+                            response_summary=str(result)[:200],
+                            status="success",
+                            agent_used=agent_id,
+                        )
+                    except Exception:
+                        pass
                 except Exception as exc:
                     console.print(f"[red]learn run failed: {exc}[/red]")
                 continue
@@ -983,6 +1252,18 @@ def chat(
                 except Exception:
                     pass
                 console.print_json(payload)
+                try:
+                    capture_learn(
+                        session_id="chat-session",
+                        handler="/learn",
+                        user_input=user_input,
+                        query="learn ingest",
+                        response_summary=f"ingest path={path} rows={ing.rows_written}",
+                        status="success",
+                        artifact_path=str(path),
+                    )
+                except Exception:
+                    pass
             except Exception as exc:
                 console.print(f"[red]/learn ingest failed: {exc}[/red]")
             continue
@@ -1089,6 +1370,25 @@ def chat(
                     )
                     console.print(f"    intent: {m.intent[:90]}...")
                     console.print(f"    cluster: {', '.join(m.cluster[:6])}")
+                try:
+                    transitions = exe._compute_capability_transitions(matches)
+                except Exception:
+                    transitions = []
+                if transitions:
+                    console.print(
+                        f"\n[bold cyan]Capability transitions:[/bold cyan] {len(transitions)}"
+                    )
+                    for t in transitions[:4]:
+                        shared = ", ".join(t.get("shared_clusters", [])[:5]) or "none"
+                        started = ", ".join(t.get("started_clusters", [])[:5]) or "none"
+                        dropped = ", ".join(t.get("dropped_clusters", [])[:5]) or "none"
+                        console.print(
+                            f"  {t.get('from','?')} → {t.get('to','?')}  |  shared=[{shared}]  +[{started}]  -[{dropped}]"
+                        )
+                else:
+                    console.print(
+                        "\n[dim]*No capability transitions (need ≥2 matches with divergent clusters)*[/dim]"
+                    )
                 if len(matches) > 0 and any(m.related_sessions for m in matches):
                     console.print(
                         f"[dim]*Novel edges queued for `/learn` ingest: {sum(len(m.related_sessions) for m in matches)}*[/dim]"
@@ -1858,8 +2158,44 @@ def chat(
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
             continue
 
+        # Dispatch remaining / commands through the slash registry.
+        if cmd.startswith("/"):
+            try:
+                ctx = SlashContext(
+                    session_id="chat-session",
+                    user_input=user_input,
+                    query=user_input,
+                    console=console,
+                )
+                result = _slash_registry.dispatch(cmd, ctx)
+                if asyncio.iscoroutine(result):
+                    async def _run(coro):
+                        return await coro
+                    result = asyncio.get_event_loop().run_until_complete(_run(result))
+                if isinstance(result, dict):
+                    if result.get("message"):
+                        console.print(result["message"])
+                else:
+                    console.print(result or "")
+            except KeyError:
+                console.print(f"[yellow]Unknown command: {cmd}[/yellow]")
+            except Exception as exc:
+                console.print(f"[red]Command error: {exc}[/red]")
+            continue
+
         # Add user message
         history.append(Message(role=Role.USER, content=user_input))
+
+        # King Wen completion injection — expand consensus, build batch save strings, and inject dominant state.
+        if completion_injection is not None:
+            try:
+                injection_payload = completion_injection.inject(user_input, emotional_input=50)
+                if injection_payload.get("batch_save_string"):
+                    history.append(Message(role=Role.SYSTEM, content=f"[kingwen|{injection_payload['injection']}|batch={injection_payload['expansion']['source']}]"))
+                if injection_payload.get("injection"):
+                    history.append(Message(role=Role.SYSTEM, content=f"[kingwen|injection={injection_payload['injection']}]"))
+            except Exception as exc:
+                console.print(f"[yellow]King Wen injection failed: {exc}[/yellow]")
 
         # Generate response
         try:

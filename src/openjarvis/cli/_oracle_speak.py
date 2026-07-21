@@ -375,12 +375,16 @@ _SPEAKER_MAP: Dict[str, str] = {
 }
 
 
-def _dominant_axis(vector: Dict[str, float]) -> str:
-    best = "coherence"
+def _dominant_axis(vector: Dict[str, float]) -> str | None:
+    best = None
     best_val = 0.0
-    for k, v in vector.items():
-        if v > best_val:
-            best_val = v
+    for k, v in (vector or {}).items():
+        try:
+            fv = float(v or 0.0)
+        except Exception:
+            continue
+        if best is None or fv > best_val:
+            best_val = fv
             best = k
     return best
 
@@ -695,8 +699,10 @@ def oracle_speak(
         if isinstance(consult.get("emotional_tongue"), dict)
         else None
     )
-    trajectory = consult.get("trajectory") or "still"
-    agree_temporal = consult.get("phase_temporal") or "present"
+    porosity_value = 0.35 if porosity is None else float(porosity)
+    trajectory = (consult.get("trajectory") or "still").lower()
+    agree_temporal = consult.get("phase_temporal") or consult.get("agree_temporal") or "present"
+    hexagram_id = consult.get("hexagram_id") or consult.get("consensus_hexagram_id") or 0
 
     audio_bytes = None
     backend = "none"
@@ -842,14 +848,19 @@ def oracle_speak(
         "scenes": route.get("scenes"),
         "director_payload": {
             "source": "kingwen_router",
+            "dominant": dominant,
             "consensus_hexagram_id": consult.get("consensus_hexagram_id"),
             "consensus_yao": consult.get("consensus_yao"),
             "consensus_temporal": consult.get("consensus_temporal"),
             "emotional_input": consult.get("emotional_input"),
-            "porosity": porosity,
+            "porosity": porosity_value,
             "trajectory": trajectory,
             "agree_temporal": agree_temporal,
             "voice_vector": vector,
+            "all_hexagrams_count": consult.get("all_hexagrams_count"),
+            "all_resolved_count": consult.get("all_resolved_count"),
+            "expanded": consult.get("expanded") or [],
+            "resolved": consult.get("resolved") or [],
             "scene": {
                 "description": text_spoken,
                 "visualPrompt": consult.get("unified_weave") or consult.get("trainingNotes") or user_text,
@@ -865,7 +876,7 @@ def oracle_speak(
                 "voiceStatus": "ready" if compliance == "compliant" else "reject",
                 "imagePath": consult.get("source_ingestion") if str(consult.get("source_ingestion", "")).startswith("vision://") else None,
             },
-            "playback_instructions": _playback_instructions_for(porosity),
+            "playback_instructions": _playback_instructions_for(porosity_value),
         },
     }
     try:

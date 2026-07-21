@@ -1,5 +1,5 @@
 # King Wen Codebasemap
-Source of truth: `C:\Users\krist\Desktop\KING-WEN-I-CHING-I-MMUTABLE-TABLES`
+Source of truth: `C:\Users\krist\Desktop\KING-WEN-I-CHING-IMMUTABLE-TABLES`
 Workspace tables expected by this codebase:
 - `data/hexagram-registry.json`
 - `data/emotional-weights.json`

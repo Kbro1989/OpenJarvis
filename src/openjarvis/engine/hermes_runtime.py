@@ -7,7 +7,7 @@ so ``SystemBuilder`` can use it as a first-class runtime target.
 
 Implicit contract assumed by this implementation:
 - The active Hermes checkout is ``C:\\\\Users\\\\krist\\\\AppData\\\\Local\\\\hermes\\\\hermes-agent``.
-- That repo exposes the runner at ``src/openjarvas/evals/backends/external/_runners/hermes_runner.py``.
+- That repo exposes the runner at ``src/openjarvis/evals/backends/external/_runners/hermes_runner.py``.
 - The runner accepts ``--task``,``--model``,``--output-json`` and writes a JSON result file.
 """
 
@@ -195,7 +195,7 @@ class HermesRuntimeEngine(InferenceEngine):
     def _runner_script(self) -> Path:
         root = self._path
         candidates = [
-            root / "src" / "openjarvas" / "evals" / "backends" / "external" / "_runners" / "hermes_runner.py",
+            root / "src" / "openjarvis" / "evals" / "backends" / "external" / "_runners" / "hermes_runner.py",
             root / "src" / "openjarvis" / "evals" / "backends" / "external" / "_runners" / "hermes_runner.py",
             root / "hermes_runner.py",
         ]

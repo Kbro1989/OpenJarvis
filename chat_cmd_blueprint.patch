@@ -1,0 +1,14 @@
+--- a/src/openjarvis/cli/chat_cmd.py
++++ b/src/openjarvis/cli/chat_cmd.py
+@@ -460,6 +460,11 @@
+             handle_oracle_command(user_input, console)
+             continue
+
++        elif cmd.startswith("/blueprint"):
++            from openjarvis.blueprints.chat_handler import handle_blueprint_command
++            handle_blueprint_command(user_input, console)
++            continue
++
+         elif cmd.startswith("/counsel "):
+             query = user_input[len("/counsel "):].strip()
+             if not query:

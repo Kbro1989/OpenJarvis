@@ -132,16 +132,30 @@ src/openjarvis/
   agents/          Managed, channel, morning-digest, orchestration agents
   cli/             All CLI commands and REPL (chat_cmd.py is the REPL core)
   core/            Config, types, registry, paths
-  emotion/         King Wen engine adapter + oracle provider
-  tools/           Tool registry: 10 King Wen tools + 30+ general tools
-  traces/          TraceStore SQLite collector + graph renderer
+  emotion/         King Wen engine adapter, completion injection, voice weights
+  tools/           Tool registry: 10+ King Wen tools + general tools
   server/          FastAPI server, WebSocket bridge, agent routes
-  training/        Megatron multi-domain ingestion pipeline
+  prompt/          Prompt builder with King Wen emotional_state injection
+  learning/        Skill ingestion + knowledge graph
+  traces/          TraceStore SQLite collector + graph renderer
   memory/          Memory approval gate + store
   security/        Audit log (hash-chained SQLite)
   speech/          TTS synthesis (voice preset from King Wen)
-  prompt/          Prompt builder with King Wen emotional_state injection
-  learning/        Skill ingestion + knowledge graph
+  scheduler/       Task scheduling system
+  mcp/             MCP (Model Context Protocol) layer
+  sovereign/       SovereignRuntime: neurological map, immunology, pulse monitor
+  openjarvis/      Runtime package: core, slash, sovereign, emotion
+src/openjarvis/
+  core/            NeurologicalMap, JarvisNeurologicalMap, NodeTester health audit
+  emotion/         King Wen completion injection, expanded consensus batch save strings
+  sovereign/       CognitiveImmunologyEmergency, SovereignCircuitBreaker, BiologicalPulseMonitor
+  slash/           Slash command registry, handlers, integration
+scripts/
+  validate_sovereign_subsystem.py  Neurology/immunology/pulse verification
+  verify_kingwen_expansion.py      Expansion frontier verification
+  validate_kingwen_research.py     Voice-pool/inject-site research fidelity check
+emergency/
+  LOCKDOWN_<ts>.json               Sovereign immunology lockdown artifacts
 ```
 
 ---

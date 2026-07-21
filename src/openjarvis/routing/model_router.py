@@ -17,8 +17,18 @@ import math
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from openjarvis.core.session_clock_bridge import consciousness_tick
+
+
+def _now_cns(session_id: str = "openjarvis") -> float:
+    try:
+        return float(consciousness_tick(session_id, domain="cns").get("tick_id") or 0)
+    except Exception:
+        return 0.0
 
 LOGGER = logging.getLogger(__name__)
 
@@ -32,6 +42,22 @@ _TASK_DEPTH_KEYWORDS = {
     "long": ["research", "deep", "plan", "design", "blueprint", "kingwen"],
 }
 
+# Verified Kimi/Moonshot model catalog from live API and Cloudflare AI dashboard.
+# Source: https://api.moonshot.ai/v1/models and CF AI models page on 2026-07-18.
+_KNOWN_KIMI_MODELS = [
+    {"id": "kimi-k3", "provider": "moonshot-ai", "context": 1_048_576, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.6", "provider": "moonshot-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.7-code", "provider": "moonshot-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.7-code-highspeed", "provider": "moonshot-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.5", "provider": "moonshot-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k3", "provider": "cloudflare-ai", "context": 1_048_576, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.6", "provider": "cloudflare-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+    {"id": "kimi-k2.7-code", "provider": "cloudflare-ai", "context": 262_144, "capabilities": ("thinking", "image_in", "video_in", "tool_use")},
+]
+
+_KIMI_K2_PREFIXES = ("kimi-k2", "kimi-for-coding", "kimi-code")
+_KIMI_K3_PREFIXES = ("kimi-k3",)
+
 
 # ── State types ───────────────────────────────────────────────────────────────
 
@@ -44,6 +70,7 @@ class ProviderHealth:
     cooldown_until: float = 0.0
     error: Optional[str] = None
     models: List[str] = field(default_factory=list)
+    cns_tick_id: float = 0.0
 
 
 @dataclass(slots=True)
@@ -141,6 +168,7 @@ class UnifiedModelRouter:
             cooldown_until=cooldown_until,
             error=data.get("last_error"),
             models=data.get("models", []),
+            cns_tick_id=_now_cns(),
         )
 
     def is_slot_live(self, provider: str, model: str, slot_key: Optional[str] = None) -> bool:
@@ -273,6 +301,10 @@ class UnifiedModelRouter:
         coherence = float(vector.get("coherence", 0.0) or 0.0)
         return "long" if chaos > 0.6 or coherence < 0.4 else "small"
 
+    def slot_reputation(self, provider: str, model: str) -> float:
+        slot = _slot_state(self._state, f"{provider}:{model}")
+        return float(slot.get("reputation", _REPUTATION_FLOOR))
+
     def _save(self) -> None:
         try:
             _save_schema(self._state)
@@ -292,3 +324,29 @@ def classify_task_depth(text: str) -> str:
         if any(keyword in lowered for keyword in keywords):
             return depth
     return "small"
+
+
+def is_kimi_k2_model(model: Optional[str]) -> bool:
+    if not model:
+        return False
+    lowered = model.strip().lower()
+    tail = lowered.rsplit("/", 1)[-1]
+    return tail.startswith(_KIMI_K2_PREFIXES) or lowered.startswith(_KIMI_K2_PREFIXES)
+
+
+def is_kimi_k3_model(model: Optional[str]) -> bool:
+    if not model:
+        return False
+    lowered = model.strip().lower()
+    tail = lowered.rsplit("/", 1)[-1]
+    return tail.startswith(_KIMI_K3_PREFIXES) or lowered.startswith(_KIMI_K3_PREFIXES)
+
+
+def resolve_kimi_candidates(model_key: Optional[str]) -> List[Dict[str, str]]:
+    if not model_key:
+        return []
+    if is_kimi_k3_model(model_key):
+        return [{"provider": entry["provider"], "model": entry["id"]} for entry in _KNOWN_KIMI_MODELS if entry["id"] == "kimi-k3"]
+    if is_kimi_k2_model(model_key):
+        return [{"provider": entry["provider"], "model": entry["id"]} for entry in _KNOWN_KIMI_MODELS if entry["id"].startswith("kimi-k2")]
+    return []

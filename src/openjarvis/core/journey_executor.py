@@ -3,6 +3,7 @@ Emits JOURNEY_ARRIVAL and LEARN_AUTO_INGEST via the existing event bus.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
@@ -81,6 +82,12 @@ class JourneyExecutor:
         raw = self._run_lookup_script(query, autotags)
         matches = self._parse_matches(raw)
         novel_edges = self._detect_novel_edges(matches)
+        capability_transitions: List[Dict[str, Any]] = []
+        try:
+            if len(matches) > 1:
+                capability_transitions = self._compute_capability_transitions(matches)
+        except Exception:
+            capability_transitions = []
 
         self.bus.publish(EventType.JOURNEY_ARRIVAL, {
             "query": query,
@@ -88,7 +95,8 @@ class JourneyExecutor:
             "match_count": len(matches),
             "top_session": matches[0].session_id if matches else None,
             "top_score": matches[0].score if matches else 0.0,
-            "matches": [m.__dict__ for m in matches],
+            "matches": [dataclasses.asdict(m) for m in matches],
+            "capability_transitions": capability_transitions,
         })
 
         if novel_edges:
@@ -99,6 +107,7 @@ class JourneyExecutor:
                 "source": "journey_lookup",
                 "context_pools": self._extract_context_pools(matches),
                 "emotional_vector": self._extract_emotion_vector(matches),
+                "capability_transitions": capability_transitions,
             })
 
         return matches
@@ -159,6 +168,25 @@ class JourneyExecutor:
                         "cluster": m.cluster,
                     })
         return novel
+
+    def _compute_capability_transitions(self, matches: List[JourneyMatch]) -> List[Dict[str, Any]]:
+        transitions: List[Dict[str, Any]] = []
+        for i in range(len(matches) - 1):
+            src = dataclasses.asdict(matches[i])
+            dst = dataclasses.asdict(matches[i + 1])
+            shared = sorted(set(src.get("cluster", [])) & set(dst.get("cluster", [])))
+            started = sorted(set(dst.get("cluster", [])) - set(src.get("cluster", [])))
+            dropped = sorted(set(src.get("cluster", [])) - set(dst.get("cluster", [])))
+            transitions.append({
+                "from": src.get("session_id", ""),
+                "to": dst.get("session_id", ""),
+                "from_intent": src.get("intent", ""),
+                "to_intent": dst.get("intent", ""),
+                "shared_clusters": shared,
+                "started_clusters": started,
+                "dropped_clusters": dropped,
+            })
+        return transitions
 
     def _extract_context_pools(self, matches: List[JourneyMatch]) -> List[str]:
         pools: set = set()

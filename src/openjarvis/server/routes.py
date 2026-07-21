@@ -26,6 +26,8 @@ from openjarvis.server.models import (
     UsageInfo,
 )
 
+from openjarvis.server.api_routes import kingwen_router
+
 router = APIRouter()
 
 
@@ -1185,4 +1187,4 @@ async def security_scan():
     }
 
 
-__all__ = ["router"]
+__all__ = ["router", "kingwen_router"]

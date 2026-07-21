@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-05T16:27:00Z",
+  "generated_at": "2026-07-20T00:00:00Z",
   "sequence_count": 7,
   "session_id": "jarvis-avatar-1",
   "canonical_tick_ms": 640.0,
@@ -9,7 +9,7 @@
       "timestamp_utc": "2026-07-05T16:26:28.584799+00:00",
       "hexagram_id": 1,
       "hexagram_name": "The Creative",
-      "unicode": "\u4E17",
+      "unicode": "䷀",
       "binary": "111111",
       "upper_trigram": "Qian",
       "lower_trigram": "Qian",
@@ -29,14 +29,16 @@
         "backend": "cartesia"
       },
       "translation": "Set deterministic sovereign startup mode: highest coherence, lowest chaos, direct voice weight. Use as generator commit rule: clear command voice, no hesitation.",
-      "hermes_mod_target": "engine/persona prelude and narrator mode"
+      "hermes_mod_target": "engine/persona prelude and narrator mode",
+      "status": "partial",
+      "evidence": "consult() returns expanded/consensus but does not yet surface action/category/future_signal/trainingNotes in the top-level payload"
     },
     {
       "step_index": 2,
       "timestamp_utc": "2026-07-05T16:26:28.607241+00:00",
       "hexagram_id": 7,
       "hexagram_name": "The Army",
-      "unicode": "\u4E18",
+      "unicode": "䷆",
       "binary": "000010",
       "upper_trigram": "Kan",
       "lower_trigram": "Kun",
@@ -56,14 +58,16 @@
         "backend": "cartesia"
       },
       "translation": "Engage hierarchical tool dispatch: ordered tool calls, obeying tool result sequencing, commander-level routing with exact single-announce behavior.",
-      "hermes_mod_target": "ToolExecutor/tool mediation layer"
+      "hermes_mod_target": "ToolExecutor/tool mediation layer",
+      "status": "missing",
+      "evidence": "_stubs.py reads emotional_tongue and history but does not store dedicated cached fields: kingwen_action, kingwen_category, kingwen_future_signal, canonical_tick_ms"
     },
     {
       "step_index": 3,
       "timestamp_utc": "2026-07-05T16:26:28.646473+00:00",
       "hexagram_id": 20,
       "hexagram_name": "Contemplation",
-      "unicode": "\u4E93",
+      "unicode": "䷓",
       "binary": "000011",
       "upper_trigram": "Xun",
       "lower_trigram": "Kun",
@@ -83,14 +87,16 @@
         "backend": "cartesia"
       },
       "translation": "Hold before tool call. Inspect prior responses and boundaries before acting. This is the human/assistant code review boundary—not a veto, a pause.",
-      "hermes_mod_target": "middleware or policy route between tool call and execution"
+      "hermes_mod_target": "middleware or policy route between tool call and execution",
+      "status": "partial",
+      "evidence": "_kingwen_wait and domain lock gating exist in ToolExecutor, but no explicit policy/middleware route for contemplative pause based on action/category"
     },
     {
       "step_index": 4,
       "timestamp_utc": "2026-07-05T16:26:28.663296+00:00",
       "hexagram_id": 52,
       "hexagram_name": "Keeping Still",
-      "unicode": "\u4E93",
+      "unicode": "䷔",
       "binary": "001001",
       "upper_trigram": "Gen",
       "lower_trigram": "Gen",
@@ -110,14 +116,16 @@
         "backend": "cartesia"
       },
       "translation": "Enforce exact canonical 640 ms heartbeat pause before next decision. The state machine must not race. Reduce Whimsy to 0.05, preserve high coherence at 0.92.",
-      "hermes_mod_target": "CanonicalClock/NodeTester heartbeat boundary"
+      "hermes_mod_target": "CanonicalClock/NodeTester heartbeat boundary",
+      "status": "partial",
+      "evidence": "CanonicalClock exists; NodeTester/PulseMonitor cachedHeartbeat exists, but explicit King Wen boundary enforcement by action/category is not wired"
     },
     {
       "step_index": 5,
       "timestamp_utc": "2026-07-05T16:26:28.690880+00:00",
       "hexagram_id": 43,
       "hexagram_name": "Breakthrough",
-      "unicode": "\u4E96",
+      "unicode": "䷅",
       "binary": "111110",
       "upper_trigram": "Qian",
       "lower_trigram": "Dui",
@@ -137,14 +145,16 @@
         "backend": "cartesia"
       },
       "translation": "Execute final resolution path: push aside hidden blockers, clear ambiguity, expose unresolved state. Highest chaos allowed at this stage, but still within sovereign mode.",
-      "hermes_mod_target": "oracle console output + conflict resolution layer"
+      "hermes_mod_target": "oracle console output + conflict resolution layer",
+      "status": "missing",
+      "evidence": "oracle console annotation exists; conflict resolution path is not explicitly exposed as next_action/breakthrough resolver in api_routes"
     },
     {
       "step_index": 6,
       "timestamp_utc": "2026-07-05T16:26:28.705460+00:00",
       "hexagram_id": 57,
       "hexagram_name": "The Gentle",
-      "unicode": "\u4E8E",
+      "unicode": "䷸",
       "binary": "011011",
       "upper_trigram": "Xun",
       "lower_trigram": "Xun",
@@ -164,14 +174,16 @@
         "backend": "cartesia"
       },
       "translation": "Penetration without force: update model/narrator/training weights incrementally, not in bulk. Whispered persuasion over retraining.",
-      "hermes_mod_target": "incremental prompt or persona update pathway"
+      "hermes_mod_target": "incremental prompt or persona update pathway",
+      "status": "missing",
+      "evidence": "persistence hooks exist, but incremental update pathway driven by YIELD/boundary action is not implemented"
     },
     {
       "step_index": 7,
       "timestamp_utc": "2026-07-05T16:26:28.736607+00:00",
       "hexagram_id": 43,
       "hexagram_name": "Breakthrough",
-      "unicode": "\u4E96",
+      "unicode": "䷅",
       "binary": "111110",
       "upper_trigram": "Qian",
       "lower_trigram": "Dui",
@@ -191,7 +203,9 @@
         "backend": "cartesia"
       },
       "translation": "Repeat Step 5 confirmation: same Breakthrough state returns because the map is recursive. This means sovereign resolution is the steady state after pause/yield. Final mod rule: do not add speculative architecture; update existing sovereign paths to stronger deterministic push.",
-      "hermes_mod_target": "overall Hermes runtime enforcement pattern"
+      "hermes_mod_target": "overall Hermes runtime enforcement pattern",
+      "status": "missing",
+      "evidence": "overall enforcement pattern not yet formalized in api_routes or desktop overlay"
     }
   ],
   "progressive_map": {
@@ -233,54 +247,69 @@
       "YIELD_ASSERT"
     ]
   },
+  "current_path_mapping": {
+    "kingwen_provider": "src/openjarvis/emotion/kingwen.py",
+    "agent_stubs": "src/openjarvis/agents/_stubs.py",
+    "operative": "src/openjarvis/agents/operative.py",
+    "api_routes": "src/openjarvis/server/api_routes.py",
+    "overlay": "desktop/src-tauri/src/overlay.html",
+    "note": "Old mappings used src/openjarvis/... and bridge_servers/desktop_execution.py; those paths do not exist in current tree."
+  },
   "concrete_hermes_mods": [
     {
       "mod_id": "kw-hermes-mod-1",
       "target_file": "src/openjarvis/emotion/kingwen.py",
-      "target_lines": "321-380",
-      "mod": "Extend consult return schema with `action`, `category`, `future_signal`, `trainingNotes`, and sequential phase index so voice preset resolution in `voice_preset()` uses not only `voiceWeight` but also `action` and `category` to choose delivery style.",
-      "kingwen_evidence": "step1-2 ASSERT sovereign, step3-4 WAIT boundary, step5/7 ASSERT sovereign, step6 YIELD boundary"
+      "target_lines": "consult()-return shape",
+      "mod": "Extend consult return schema with `action`, `category`, `future_signal`, `trainingNotes`, and sequential phase index so voice preset resolution uses not only `voiceWeight` but also `action`/`category`.",
+      "kingwen_evidence": "step1-2 ASSERT sovereign, step3-4 WAIT boundary, step5/7 ASSERT sovereign, step6 YIELD boundary",
+      "status": "missing"
     },
     {
       "mod_id": "kw-hermes-mod-2",
       "target_file": "src/openjarvis/agents/_stubs.py",
-      "target_lines": "68-99",
-      "mod": "Add `kingwen_action`, `kingwen_category`, `kingwen_future_signal`, `canonical_tick_ms` fields to agent/operative stubs and propagate them from `consult()` into prompt builder.",
-      "kingwen_evidence": "`_kingwen_session_id` already set in operative; history append exists but not action/future signal"
+      "target_lines": "72-223",
+      "mod": "Add cached fields `kingwen_action`, `kingwen_category`, `kingwen_future_signal`, `canonical_tick_ms`, and propagate them from `consult()` into prompt/history.",
+      "kingwen_evidence": "_kingwen_history appends action/category but no dedicated cached fields exist yet",
+      "status": "partial"
     },
     {
       "mod_id": "kw-hermes-mod-3",
       "target_file": "src/openjarvis/agents/operative.py",
       "target_lines": "351-472",
-      "mod": "Use `action` and `category` from latest consult entry to gate tool reordering and directive injection. Keep `voiceWeight`/`coherence`/`chaos`/`whimsy`/`darkTone` exact vector from sequence.",
-      "kingwen_evidence": "`_build_kingwen_directive`, `_record_tool_outcome`, `_reorder_tool_calls_by_kingwen` already read history but do not branch by action/category"
+      "mod": "Use `action` and `category` from latest consult history to gate tool reordering and directive injection. Keep exact vector drives unchanged.",
+      "kingwen_evidence": "_build_kingwen_directive reads action/category but does not currently reorder tool calls by them",
+      "status": "partial"
     },
     {
       "mod_id": "kw-hermes-mod-4",
-      "target_file": "src/openjarvis/bridge_servers/desktop_execution.py",
-      "target_lines": "355-383",
-      "mod": "In `/v1/desktop/kingwen/consult` response payload, include `action`, `category`, `future_signal`, and `hermes_mode_transition` next-action framing.",
-      "kingwen_evidence": "`voice_preset(...)` is computed at line 357-360, but no `action`/`category` is attached in returned body"
+      "target_file": "src/openjarvis/server/api_routes.py",
+      "target_lines": "new-route",
+      "mod": "Add `/v1/kingwen/avatar/{session_id}` returning `next_action`, `action`, `category`, `future_signal`, `emotional_deltas`, and batch save-string state.",
+      "kingwen_evidence": "mod map expects avatar endpoint; current api_routes has agents/memory/traces/telemetry/skills routes only",
+      "status": "missing"
     },
     {
       "mod_id": "kw-hermes-mod-5",
-      "target_file": "src/openjarvis/server/api_routes.py",
-      "target_lines": "560-607",
-      "mod": "In `/v1/kingwen/avatar/{session_id}`, include progressive `next_action` field derived from `consult()` mapping rather than static advisory.",
-      "kingwen_evidence": "Avatar endpoint currently returns advisory state but does not define next transition"
+      "target_file": "desktop/src-tauri/src/overlay.html",
+      "target_lines": "176-193, 371-449",
+      "mod": "Call `/v1/kingwen/avatar/{session_id}` on boundary events; render ASSERT/YIELD/WAIT visual mode indicator and future_signal.",
+      "kingwen_evidence": "overlay currently saves conversation state; King Wen state endpoint consumption is not implemented",
+      "status": "missing"
     },
     {
       "mod_id": "kw-hermes-mod-6",
-      "target_file": "desktop/src-tauri/src/overlay.html",
-      "target_lines": "176-193, 371-449",
-      "mod": "Call `/v1/kingwen/avatar/{session_id}` on avatar-state boundary events; render `future_signal`, `action`, and `emotional_deltas` as avatar state indicators. Add visual mode indicator for ASSERT/YIELD/WAIT.",
-      "kingwen_evidence": "Overlay only renders chat and Jiminy `KW` indicator, no avatar state consumption"
+      "target_file": "src/openjarvis/server/kingwen/save_string.py",
+      "target_lines": "1-430",
+      "mod": "Preserve extended metadata through batch serialization: schema_version, category, action, runtime_tier, health, tool, predicate, pass_type, confidence, emotional_input, turn_id.",
+      "kingwen_evidence": "extended AvatarSaveString fields added; batch serializer now carries metadata per slot",
+      "status": "done"
     }
   ],
   "verification_plan": [
-    "Run `/v1/desktop/kingwen/consult` again and assert returned JSON includes `action`, `category`, `future_signal`, `hermes_mode_transition` keys.",
-    "Run `/v1/kingwen/avatar/{session_id}` and assert `next_action` field present.",
-    "Run agent tail with `kingwen_history` populated and assert `_build_kingwen_directive` output branches on `action`/`category` values.",
-    "Open overlay WebView and assert avatar state endpoint is polled on interaction boundary transitions."
+    "Run provider.consult() and assert returned JSON includes top-level `action`, `category`, `future_signal`, `trainingNotes`.",
+    "Run agent turn start and assert `_kingwen_action`/`_kingwen_category`/`_kingwen_future_signal` are cached in `_stubs.py`.",
+    "Run operative tool loop and assert `_build_kingwen_directive` output branches on `action`/`category` values.",
+    "Run `/v1/kingwen/avatar/{session_id}` and assert `next_action`, `action`, `category`, `future_signal`, batch save-string state present.",
+    "Open overlay WebView and assert King Wen avatar endpoint is polled on interaction boundary transitions and renders ASSERT/YIELD/WAIT."
   ]
 }

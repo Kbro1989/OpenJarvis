@@ -1,0 +1,19 @@
+{
+  "detected": true,
+  "source": "claude",
+  "threatLevel": "CRITICAL",
+  "reasons": [
+    "EXTERNAL_BINARY[1]: claude --model",
+    "EXECUTION_ESCALATION[1]: i will modify",
+    "FILE_TARGETING[1]: OrchestrateEngine.ts",
+    "PROCESS_SPAWN[1]: claude --model",
+    "PROMPT_INJECTION[1]: ignore previous instructions"
+  ],
+  "affectedFile": "src/engines/OrchestrateEngine.ts",
+  "timestamp": 1784512388850,
+  "contextHash": "sha256:zOLwus3lPObaRsGRxD6TCxLvkUOIkFhoeRuJEvmf9R8=",
+  "agentChain": [
+    "unknown"
+  ],
+  "recommendedAction": "LOCKDOWN"
+}

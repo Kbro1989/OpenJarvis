@@ -138,6 +138,16 @@ def serve(
     register_builtin_models()
     bus = EventBus(record_history=False)
 
+    # Attach reflexive skill-ring writer so each finished session rewrites
+    # triggered_skills + outcome_vector into reflexive-skills.jsonl.
+    try:
+        from openjarvis.reflex.skill_ring_writer import ReflexiveSkillRingWriter
+
+        _skill_ring_writer = ReflexiveSkillRingWriter()
+        _skill_ring_writer.attach(bus)
+    except Exception as exc:
+        logger.debug("ReflexiveSkillRingWriter init failed: %s", exc)
+
     # Set up telemetry
     telem_store = None
     if config.telemetry.enabled:
