@@ -130,3 +130,8 @@ learning.db
 minion_logs/
 *.oj-debug.json
 oj-debug.*.json
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
